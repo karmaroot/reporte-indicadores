@@ -36,10 +36,22 @@ export default function InboxPage() {
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<any>(null);
 
+  const formatDateSafe = (dateStr: string) => {
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return dateStr;
+    return `${parseInt(parts[2], 10)}/${parseInt(parts[1], 10)}/${parts[0]}`;
+  };
+
   const now = new Date();
-  const activePeriod = (periods ?? []).find(p =>
-    p.status === 'open' && new Date(p.start_date) <= now && new Date(p.end_date) >= now
-  );
+  const activePeriod = (periods ?? []).find(p => {
+    if (p.status !== 'open') return false;
+    const [sYear, sMonth, sDay] = p.start_date.split('-').map(Number);
+    const startDate = new Date(sYear, sMonth - 1, sDay, 0, 0, 0);
+    const [eYear, eMonth, eDay] = p.end_date.split('-').map(Number);
+    const endDate = new Date(eYear, eMonth - 1, eDay, 23, 59, 59);
+    return startDate <= now && endDate >= now;
+  });
 
   const myAsInformant = (assignments ?? []).filter((a: any) => a.informant_id === user?.id);
   const myAsReviewer = (assignments ?? []).filter((a: any) => a.reviewer_id === user?.id);
@@ -105,7 +117,7 @@ export default function InboxPage() {
       {activePeriod && (
         <div className="mb-4 rounded-md bg-muted px-4 py-2 text-sm text-muted-foreground">
           Periodo activo: <span className="font-medium text-foreground">{activePeriod.name}</span>
-          {' '}({new Date(activePeriod.start_date).toLocaleDateString('es')} — {new Date(activePeriod.end_date).toLocaleDateString('es')})
+          {' '}({formatDateSafe(activePeriod.start_date)} — {formatDateSafe(activePeriod.end_date)})
         </div>
       )}
 

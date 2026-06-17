@@ -23,18 +23,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<AuthContextType['profile']>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) fetchUserData(session.user.id);
-      else setLoading(false);
-    });
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          fetchUserData(session.user.id);
+        } else {
+          setLoading(false);
+        }
+      })
+      .catch((error) => {
+        console.error("Error getting session:", error);
+        setLoading(false);
+      });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
-      if (session?.user) fetchUserData(session.user.id);
-      else {
+      if (session?.user) {
+        fetchUserData(session.user.id);
+      } else {
         setUserRole(null);
         setProfile(null);
         setLoading(false);
@@ -45,13 +54,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function fetchUserData(userId: string) {
-    const [{ data: roles }, { data: prof }] = await Promise.all([
-      supabase.from('user_roles').select('role').eq('user_id', userId),
-      supabase.from('profiles').select('id, name, email, institution_id').eq('id', userId).maybeSingle(),
-    ]);
-    setUserRole(roles?.[0]?.role ?? 'informant');
-    setProfile(prof);
-    setLoading(false);
+    try {
+      const [{ data: roles }, { data: prof }] = await Promise.all([
+        supabase.from('user_roles').select('role').eq('user_id', userId),
+        supabase.from('profiles').select('id, name, email, institution_id').eq('id', userId).maybeSingle(),
+      ]);
+      setUserRole(roles?.[0]?.role ?? 'informant');
+      setProfile(prof);
+    } catch (error) {
+      console.error("Error fetching user data:", error);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const signOut = async () => { await supabase.auth.signOut(); };

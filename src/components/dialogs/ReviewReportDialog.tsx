@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import {
   CheckCircle2, XCircle, Loader2, Calendar, Tag, BookOpen, User,
-  Paperclip, MessageSquare, Clock, Info, X, FileText, Download
+  Paperclip, MessageSquare, Clock, Info, X, FileText, Download, AlertCircle
 } from 'lucide-react';
 import { useApproveReport, useRejectReport } from '@/hooks/useSupabaseMutations';
 import { useObservations, useAttachments } from '@/hooks/useSupabaseQuery';
@@ -36,24 +36,47 @@ export function ReviewReportDialog({ open, onOpenChange, report }: ReviewReportD
   const inst = report.institutions as any;
   const informant = report.informant as any;
 
-  const getQuarterFromMonth = (month: string) => {
-    const m = (month || '').toLowerCase();
-    if (m.includes('enero') || m.includes('febrero') || m.includes('marzo')) return 1;
-    if (m.includes('abril') || m.includes('mayo') || m.includes('junio')) return 2;
-    if (m.includes('julio') || m.includes('agosto') || m.includes('septiembre')) return 3;
-    if (m.includes('octubre') || m.includes('noviembre') || m.includes('diciembre')) return 4;
-    return 1;
+  const getQuarterKey = (date: Date) => {
+    const month = date.getMonth();
+    if (month < 3) return { key: 'q1_prog', label: '1er Trimestre' };
+    if (month < 6) return { key: 'q2_prog', label: '2do Trimestre' };
+    if (month < 9) return { key: 'q3_prog', label: '3er Trimestre' };
+    return { key: 'q4_prog', label: '4to Trimestre' };
   };
 
-  const currentQuarter = getQuarterFromMonth(report.reporting_month);
-  const quarterLabel = ['1er Trimestre', '2do Trimestre', '3er Trimestre', '4to Trimestre'][currentQuarter - 1];
-  const quarterTarget = Number(ind?.[`q${currentQuarter}_prog`] ?? 0);
+  const getQuarterDate = () => {
+    const per = report?.periods as any;
+    if (per?.start_date) {
+      const parts = per.start_date.split('-');
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1; // 0-indexed
+      const day = parseInt(parts[2], 10);
+      return new Date(year, month, day);
+    }
+    // Fallback to month parsing if no start_date
+    const m = (report.reporting_month || '').toLowerCase();
+    if (m.includes('enero') || m.includes('febrero') || m.includes('marzo')) return new Date(2026, 0, 1);
+    if (m.includes('abril') || m.includes('mayo') || m.includes('junio')) return new Date(2026, 3, 1);
+    if (m.includes('julio') || m.includes('agosto') || m.includes('septiembre')) return new Date(2026, 6, 1);
+    if (m.includes('octubre') || m.includes('noviembre') || m.includes('diciembre')) return new Date(2026, 9, 1);
+    return new Date();
+  };
+
+  const quarterInfo = getQuarterKey(getQuarterDate());
+  const quarterLabel = quarterInfo.label;
+  const quarterTarget = Number(ind?.[quarterInfo.key] ?? ind?.target_value ?? 0);
   const reportedVal = Number(report.reported_value ?? 0);
   
   const progressPct = quarterTarget > 0 ? Math.min((reportedVal / quarterTarget) * 100, 100) : 0;
 
   const unitLower = ind?.unit?.toLowerCase().trim() ?? '';
   const isQuantity = ind?.indicator_type === 'quantity' || unitLower === 'cantidad';
+
+  const formatReportedValue = (val: number) => {
+    return isQuantity
+      ? (Number.isInteger(val) ? `${val}` : `${val.toFixed(2)}`)
+      : `${val.toFixed(2)}`;
+  };
 
   const canReview = ['submitted', 'responded'].includes(report.status);
 
@@ -112,7 +135,7 @@ export function ReviewReportDialog({ open, onOpenChange, report }: ReviewReportD
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-7xl w-full p-0 gap-0 overflow-hidden border-none shadow-2xl">
+      <DialogContent className="max-w-7xl w-full p-0 gap-0 overflow-y-auto max-h-[95vh] lg:overflow-hidden lg:max-h-none border-none shadow-2xl">
         {/* Header mirroring Informant Style */}
         <div className="px-8 py-5 border-b bg-background flex items-center justify-between">
           <div className="space-y-0.5">
@@ -129,7 +152,7 @@ export function ReviewReportDialog({ open, onOpenChange, report }: ReviewReportD
         </div>
 
         {/* Main Content Split: INFO | DATA | RESOLUTION */}
-        <div className="relative grid grid-cols-1 lg:grid-cols-[1fr_1fr_320px] divide-x h-[80vh] overflow-hidden">
+        <div className="relative grid grid-cols-1 lg:grid-cols-[1fr_1fr_320px] divide-x h-auto lg:h-[80vh] overflow-y-visible lg:overflow-hidden">
           
           {/* Notes Panel (Shared Logic) */}
           {ind?.notes && (
@@ -226,7 +249,7 @@ export function ReviewReportDialog({ open, onOpenChange, report }: ReviewReportD
                 <div className="flex-1 text-center space-y-1">
                   <p className="text-[10px] font-black text-muted-foreground uppercase opacity-60">Avance Reportado</p>
                   <div className="flex flex-col">
-                    <span className="text-4xl font-black text-primary tracking-tighter">{reportedVal}</span>
+                    <span className="text-4xl font-black text-primary tracking-tighter">{formatReportedValue(reportedVal)}</span>
                     <span className="text-[10px] text-muted-foreground font-bold">{ind?.unit ?? ''}</span>
                   </div>
                 </div>
@@ -264,6 +287,19 @@ export function ReviewReportDialog({ open, onOpenChange, report }: ReviewReportD
                 <Paperclip className="h-3.5 w-3.5" /> Datos del Reporte
               </p>
 
+              {/* Zero Report Alert Indicator */}
+              {report.is_zero_report && (
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 text-amber-800">
+                  <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide">Reporte de Avance "Cero"</p>
+                    <p className="text-xs font-medium leading-relaxed mt-1">
+                      El informante ha seleccionado la opción de <span className="font-bold underline">Reportar avance "Cero"</span> para este periodo. Por lo tanto, el numerador y denominador han sido deshabilitados y establecidos en cero.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Formula View if applicable */}
               {!isQuantity ? (
                 <div className="space-y-5">
@@ -279,13 +315,13 @@ export function ReviewReportDialog({ open, onOpenChange, report }: ReviewReportD
                   </div>
                   <div className="bg-primary/5 rounded-2xl p-4 border border-primary/20 space-y-1">
                     <p className="text-[10px] font-black text-primary uppercase">Avance Calculado (Resultado)</p>
-                    <p className="text-3xl font-black text-primary">{reportedVal.toFixed(2)} <span className="text-sm font-bold opacity-60 ml-1">{ind?.unit}</span></p>
+                    <p className="text-3xl font-black text-primary">{formatReportedValue(reportedVal)} <span className="text-sm font-bold opacity-60 ml-1">{ind?.unit}</span></p>
                   </div>
                 </div>
               ) : (
                 <div className="bg-primary/5 rounded-2xl p-6 border border-primary/20 space-y-1 text-center">
                   <p className="text-[10px] font-black text-primary uppercase">Valor de Avance Reportado</p>
-                  <p className="text-5xl font-black text-primary tracking-tighter">{reportedVal}</p>
+                  <p className="text-5xl font-black text-primary tracking-tighter">{formatReportedValue(reportedVal)}</p>
                   <p className="text-xs font-bold text-primary/60">{ind?.unit}</p>
                 </div>
               )}

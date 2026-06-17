@@ -1,10 +1,13 @@
+import { useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { Play, Zap, Clock } from 'lucide-react';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Play, Zap, Clock, Filter, Search, X } from 'lucide-react';
 import { useAllInstrumentIndicators, useAutoStartReports } from '@/hooks/useInstruments';
 import { FREQUENCY_LABELS } from '@/lib/constants';
 import { toast } from 'sonner';
@@ -26,11 +29,55 @@ export default function AutoStart() {
   const { data: assignments, isLoading } = useAllInstrumentIndicators();
   const autoStart = useAutoStartReports();
 
-  const pendingStart = (assignments ?? []).filter((a: any) =>
+  const [selectedCdR, setSelectedCdR] = useState<string>('all');
+  const [selectedInstrument, setSelectedInstrument] = useState<string>('all');
+  const [searchIndicator, setSearchIndicator] = useState<string>('');
+
+  // Extract unique institutions and instruments
+  const uniqueCdRs = Array.from(
+    new Set((assignments ?? []).map((a: any) => a.instruments?.institutions?.name).filter(Boolean))
+  ) as string[];
+
+  const uniqueInstruments = Array.from(
+    new Set(
+      (assignments ?? [])
+        .filter((a: any) => selectedCdR === 'all' || a.instruments?.institutions?.name === selectedCdR)
+        .map((a: any) => a.instruments?.name)
+        .filter(Boolean)
+    )
+  ) as string[];
+
+  const handleCdRChange = (value: string) => {
+    setSelectedCdR(value);
+    setSelectedInstrument('all');
+  };
+
+  const isFiltered = selectedCdR !== 'all' || selectedInstrument !== 'all' || searchIndicator !== '';
+
+  const handleClearFilters = () => {
+    setSelectedCdR('all');
+    setSelectedInstrument('all');
+    setSearchIndicator('');
+  };
+
+  // Filter assignments based on selections
+  const filteredAssignments = (assignments ?? []).filter((a: any) => {
+    const cdrName = a.instruments?.institutions?.name || '';
+    const instName = a.instruments?.name || '';
+    const indName = a.indicators?.name || '';
+
+    const matchesCdR = selectedCdR === 'all' || cdrName === selectedCdR;
+    const matchesInstrument = selectedInstrument === 'all' || instName === selectedInstrument;
+    const matchesIndicator = indName.toLowerCase().includes(searchIndicator.toLowerCase());
+
+    return matchesCdR && matchesInstrument && matchesIndicator;
+  });
+
+  const pendingStart = filteredAssignments.filter((a: any) =>
     a.auto_start && shouldStart(a.periodicity, a.last_started_at)
   );
 
-  const alreadyStarted = (assignments ?? []).filter((a: any) =>
+  const alreadyStarted = filteredAssignments.filter((a: any) =>
     a.auto_start && !shouldStart(a.periodicity, a.last_started_at)
   );
 
@@ -60,6 +107,76 @@ export default function AutoStart() {
         <EmptyState icon={Zap} title="Sin configuración de auto-inicio" description="No hay asignaciones con inicio automático habilitado. Activa el auto-inicio en la configuración de instrumentos." />
       ) : (
         <div className="space-y-6">
+          {/* Filters Bar */}
+          <div className="bg-card rounded-2xl shadow-card border p-4 space-y-4">
+            <div className="flex items-center justify-between border-b pb-2">
+              <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                <Filter className="h-3.5 w-3.5 text-primary" /> Filtros de Asignaciones
+              </h3>
+              {isFiltered && (
+                <Button variant="ghost" size="sm" className="h-7 text-xs font-semibold text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg px-2.5" onClick={handleClearFilters}>
+                  <X className="h-3.5 w-3.5 mr-1" /> Limpiar Filtros
+                </Button>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Centro de Responsabilidad</label>
+                <Select value={selectedCdR} onValueChange={handleCdRChange}>
+                  <SelectTrigger className="rounded-xl border-muted/50 bg-background/50 focus:ring-primary/20">
+                    <SelectValue placeholder="Todos los CdR" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="all">Todos los CdR</SelectItem>
+                    {uniqueCdRs.map((name: string) => (
+                      <SelectItem key={name} value={name}>{name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Instrumento</label>
+                <Select value={selectedInstrument} onValueChange={setSelectedInstrument}>
+                  <SelectTrigger className="rounded-xl border-muted/50 bg-background/50 focus:ring-primary/20">
+                    <SelectValue placeholder="Todos los instrumentos" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="all">Todos los instrumentos</SelectItem>
+                    {uniqueInstruments.map((name: string) => (
+                      <SelectItem key={name} value={name}>{name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Indicador</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por nombre..."
+                    className="pl-9 rounded-xl border-muted/50 bg-background/50 focus:ring-primary/20"
+                    value={searchIndicator}
+                    onChange={e => setSearchIndicator(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Search Result Empty State */}
+          {pendingStart.length === 0 && alreadyStarted.length === 0 && (
+            <div className="text-center py-12 bg-card border rounded-2xl">
+              <Search className="h-8 w-8 text-muted-foreground mx-auto mb-2 opacity-50" />
+              <p className="text-sm font-semibold text-foreground">No se encontraron asignaciones</p>
+              <p className="text-xs text-muted-foreground mt-1">Prueba a ajustar o limpiar tus filtros activos.</p>
+              <Button variant="outline" size="sm" className="mt-4 rounded-xl" onClick={handleClearFilters}>
+                Limpiar Filtros
+              </Button>
+            </div>
+          )}
+
           {pendingStart.length > 0 && (
             <div>
               <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">

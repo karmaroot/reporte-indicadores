@@ -20,6 +20,7 @@ export const ROLE_LABELS = {
   admin: 'Administrador',
   reviewer: 'Revisor',
   informant: 'Informante',
+  jefatura: 'Jefatura',
 } as const;
 
 export const INSTITUTION_TYPE_LABELS = {

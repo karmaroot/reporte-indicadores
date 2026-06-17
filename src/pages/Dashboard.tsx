@@ -14,9 +14,15 @@ import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ReportIndicatorDialog } from '@/components/dialogs/ReportIndicatorDialog';
 import { ReviewReportDialog } from '@/components/dialogs/ReviewReportDialog';
+import AdminDashboard from './AdminDashboard';
 
 export default function Dashboard() {
   const { user, userRole } = useAuth();
+
+  if (userRole === 'jefatura') {
+    return <AdminDashboard />;
+  }
+
   const filter = { userId: user?.id, role: userRole };
 
   const { data: reports, isLoading: reportsLoading } = useReports(filter);
@@ -24,6 +30,17 @@ export default function Dashboard() {
   const { data: indicators } = useIndicators(filter);
   const { data: assignments } = useMyAssignments(user?.id);
   const { data: periods } = usePeriods();
+
+  const formatReportedValue = (val: any, indicator: any) => {
+    if (val === null || val === undefined) return '0';
+    const num = Number(val);
+    const unitLower = indicator?.unit?.toLowerCase().trim() ?? '';
+    const isQuantity = indicator?.indicator_type === 'quantity' || unitLower === 'cantidad';
+    if (isQuantity) {
+      return Number.isInteger(num) ? `${num}` : `${num.toFixed(2)}`;
+    }
+    return `${num.toFixed(2)}`;
+  };
   
   const submitReport = useSubmitReport();
   const resubmitReport = useResubmitReport();
@@ -149,7 +166,7 @@ export default function Dashboard() {
                 </div>
                 <div className="flex items-center gap-6">
                   <div className="text-right hidden sm:block">
-                    <p className="text-xs font-bold text-foreground">{report.reported_value ?? '0'}</p>
+                    <p className="text-xs font-bold text-foreground">{formatReportedValue(report.reported_value, report.indicators)}</p>
                     <p className="text-[10px] text-muted-foreground">Valor reportado</p>
                   </div>
                   <StatusBadge status={report.status as any} />

@@ -30,16 +30,36 @@ export default function UsersPage() {
     !search || u.name.toLowerCase().includes(search.toLowerCase()) || u.email?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleSave = async (values: { id: string; name: string; institution_id: string | null; role: string }) => {
+  const handleSave = async (values: { id: string; name: string; institution_id: string | null; role: string; institution_ids?: string[] }) => {
     const currentRole = editing?.role;
     await updateProfile.mutateAsync({ id: values.id, name: values.name, institution_id: values.institution_id });
     if (values.role !== currentRole) {
       await updateRole.mutateAsync({ userId: values.id, role: values.role as any });
     }
+
+    // Sync user_institutions table
+    const { error: delError } = await supabase
+      .from('user_institutions')
+      .delete()
+      .eq('user_id', values.id);
+    if (delError) console.error("Error deleting user_institutions:", delError);
+
+    if (values.role === 'jefatura' && values.institution_ids && values.institution_ids.length > 0) {
+      const records = values.institution_ids.map(instId => ({
+        user_id: values.id,
+        institution_id: instId
+      }));
+      const { error: insError } = await supabase
+        .from('user_institutions')
+        .insert(records);
+      if (insError) console.error("Error inserting user_institutions:", insError);
+    }
+
+    qc.invalidateQueries({ queryKey: ['profiles'] });
     setDialogOpen(false);
   };
 
-  const handleCreateUser = async (values: { email: string; password: string; name: string; role: string; institution_id: string | null }) => {
+  const handleCreateUser = async (values: { email: string; password: string; name: string; role: string; institution_id: string | null; institution_ids?: string[] }) => {
     setCreating(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -49,7 +69,8 @@ export default function UsersPage() {
           password: values.password, 
           name: values.name,
           role: values.role,
-          institution_id: values.institution_id
+          institution_id: values.institution_id,
+          institution_ids: values.institution_ids
         },
       });
       if (res.error) throw new Error(res.error.message ?? 'Error al crear usuario');
@@ -67,7 +88,14 @@ export default function UsersPage() {
 
   const openEdit = (u: any) => {
     const role = u.user_roles?.[0]?.role ?? 'informant';
-    setEditing({ id: u.id, name: u.name, email: u.email, institution_id: u.institution_id, role });
+    setEditing({ 
+      id: u.id, 
+      name: u.name, 
+      email: u.email, 
+      institution_id: u.institution_id, 
+      role,
+      institution_ids: (u.user_institutions ?? []).map((ui: any) => ui.institution_id)
+    });
     setDialogOpen(true);
   };
 

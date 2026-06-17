@@ -164,16 +164,69 @@ export function useAutoStartReports() {
       if (!periodData?.length) throw new Error('No hay periodos registrados en el sistema');
 
       const period = periodData[0];
-      const inserts = assignments.map(a => ({
-        indicator_id: a.indicator_id,
-        institution_id: (a.instruments as any)?.institution_id,
-        period_id: period.id,
-        created_by: a.informant_id,
-        status: 'draft' as const,
-      }));
+      const inserts = [];
+      const prevReportAttachmentMap: { [key: number]: string } = {};
 
-      const { error } = await supabase.from('indicator_reports').insert(inserts);
+      for (let i = 0; i < assignments.length; i++) {
+        const a = assignments[i];
+        const { data: prevReports } = await supabase
+          .from('indicator_reports')
+          .select('*')
+          .eq('indicator_id', a.indicator_id)
+          .eq('institution_id', (a.instruments as any)?.institution_id)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        const prevReport = prevReports && prevReports.length > 0 ? prevReports[0] : null;
+
+        if (prevReport) {
+          prevReportAttachmentMap[i] = prevReport.id;
+        }
+
+        inserts.push({
+          indicator_id: a.indicator_id,
+          institution_id: (a.instruments as any)?.institution_id,
+          period_id: period.id,
+          created_by: a.informant_id,
+          status: 'draft' as const,
+          numerator: prevReport ? prevReport.numerator : null,
+          denominator: prevReport ? prevReport.denominator : null,
+          reported_value: prevReport ? prevReport.reported_value : null,
+          is_zero_report: prevReport ? prevReport.is_zero_report : false,
+          comment: prevReport ? `Valores de arrastre de reporte anterior: ${prevReport.comment || ''}` : '',
+          verification_method: prevReport ? prevReport.verification_method : null,
+        });
+      }
+
+      const { data: insertedReports, error } = await supabase
+        .from('indicator_reports')
+        .insert(inserts)
+        .select('*');
+
       if (error) throw error;
+
+      if (insertedReports) {
+        for (let i = 0; i < insertedReports.length; i++) {
+          const prevReportId = prevReportAttachmentMap[i];
+          if (prevReportId) {
+            const { data: prevAttachments } = await supabase
+              .from('attachments')
+              .select('*')
+              .eq('report_id', prevReportId);
+
+            if (prevAttachments && prevAttachments.length > 0) {
+              const newAttachments = prevAttachments.map(att => ({
+                report_id: insertedReports[i].id,
+                file_url: att.file_url,
+                file_name: att.file_name,
+                file_type: att.file_type,
+                uploaded_by: att.uploaded_by,
+              }));
+              await supabase.from('attachments').insert(newAttachments);
+            }
+          }
+        }
+      }
 
       // Update last_started_at
       for (const a of assignments) {

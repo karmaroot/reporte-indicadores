@@ -24,6 +24,7 @@ const mainNav = [
 ];
 
 const adminNav = [
+  { title: 'Cuadro de Mando', url: '/admin-dashboard', icon: Activity },
   { title: 'Centros de Responsabilidad', url: '/institutions', icon: Building2 },
   { title: 'Periodos', url: '/periods', icon: ClipboardList },
   { title: 'Inicio Automático', url: '/auto-start', icon: Zap },
@@ -44,6 +45,13 @@ export function AppSidebar() {
     if (url === '/reports' && inboxCounts?.pendingReview) return inboxCounts.pendingReview;
     return 0;
   };
+
+  const filteredMainNav = mainNav.filter(item => {
+    if (userRole === 'jefatura') {
+      return item.url !== '/inbox' && item.url !== '/observations';
+    }
+    return true;
+  });
 
   return (
     <Sidebar collapsible="icon">
@@ -68,7 +76,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>Principal</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainNav.map((item) => {
+              {filteredMainNav.map((item) => {
                 const count = getBadge(item.url);
                 return (
                   <SidebarMenuItem key={item.title}>

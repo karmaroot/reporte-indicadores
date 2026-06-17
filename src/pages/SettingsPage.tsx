@@ -9,6 +9,7 @@ import { useUpdateProfile } from '@/hooks/useSupabaseMutations';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Save, Lock } from 'lucide-react';
+import { ROLE_LABELS } from '@/lib/constants';
 
 export default function SettingsPage() {
   const { profile, userRole } = useAuth();
@@ -59,7 +60,7 @@ export default function SettingsPage() {
             </div>
             <div>
               <Label>Rol</Label>
-              <Input value={userRole === 'admin' ? 'Administrador' : userRole === 'reviewer' ? 'Revisor' : 'Informante'} disabled className="bg-muted" />
+              <Input value={ROLE_LABELS[userRole as keyof typeof ROLE_LABELS] ?? userRole ?? ''} disabled className="bg-muted" />
             </div>
             <Button onClick={handleNameSave} disabled={updateProfile.isPending} size="sm">
               <Save className="h-4 w-4 mr-2" />

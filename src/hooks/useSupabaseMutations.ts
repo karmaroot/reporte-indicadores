@@ -2,6 +2,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
+export function sanitizeFilename(filename: string): string {
+  const normalized = filename.normalize('NFKC');
+  const noAccents = normalized.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return noAccents.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
 // --- Institutions ---
 export function useCreateInstitution() {
   const qc = useQueryClient();
@@ -118,7 +124,7 @@ export function useDeletePeriod() {
 export function useUpdateUserRole() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ userId, role }: { userId: string; role: 'admin' | 'reviewer' | 'informant' }) => {
+    mutationFn: async ({ userId, role }: { userId: string; role: 'admin' | 'reviewer' | 'informant' | 'jefatura' }) => {
       const { error } = await supabase.from('user_roles').update({ role }).eq('user_id', userId);
       if (error) throw error;
     },
@@ -155,6 +161,7 @@ export function useSubmitReport() {
       verification_method?: string;
       verification_file?: File | null;
       created_by: string;
+      is_zero_report?: boolean;
     }) => {
       let reportId = '';
       
@@ -166,6 +173,10 @@ export function useSubmitReport() {
         .eq('period_id', values.period_id)
         .maybeSingle();
 
+      const sanitizedMethodName = values.verification_file 
+        ? sanitizeFilename(values.verification_file.name) 
+        : (values.verification_method || null);
+
       if (existing?.id) {
         // Update the existing report instead of creating a duplicate
         const { error } = await supabase.from('indicator_reports').update({
@@ -175,7 +186,8 @@ export function useSubmitReport() {
           reported_value: values.reported_value,
           reporting_month: values.reporting_month,
           comment: values.comment || null,
-          verification_method: values.verification_method || null,
+          verification_method: sanitizedMethodName,
+          is_zero_report: values.is_zero_report ?? false,
           status: 'submitted',
           updated_at: new Date().toISOString(),
         }).eq('id', existing.id);
@@ -192,7 +204,8 @@ export function useSubmitReport() {
           reported_value: values.reported_value,
           reporting_month: values.reporting_month,
           comment: values.comment || null,
-          verification_method: values.verification_method || null,
+          verification_method: sanitizedMethodName,
+          is_zero_report: values.is_zero_report ?? false,
           created_by: values.created_by,
           status: 'submitted',
         }).select('id').single();
@@ -203,8 +216,8 @@ export function useSubmitReport() {
       // 2. Handle File Upload if present
       if (values.verification_file && reportId) {
         const file = values.verification_file;
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${reportId}/${Date.now()}_${file.name}`;
+        const sanitizedName = sanitizeFilename(file.name);
+        const fileName = `${reportId}/${Date.now()}_${sanitizedName}`;
         const filePath = `${fileName}`;
 
         const { error: uploadError } = await supabase.storage
@@ -247,13 +260,19 @@ export function useResubmitReport() {
       verification_method?: string;
       verification_file?: File | null;
       userId?: string;
+      is_zero_report?: boolean;
     }) => {
+      const sanitizedMethodName = values.verification_file 
+        ? sanitizeFilename(values.verification_file.name) 
+        : (values.verification_method || null);
+
       const { error } = await supabase.from('indicator_reports').update({
         numerator: values.numerator,
         denominator: values.denominator,
         reported_value: values.reported_value,
         comment: values.comment || null,
-        verification_method: values.verification_method || null,
+        verification_method: sanitizedMethodName,
+        is_zero_report: values.is_zero_report ?? false,
         status: 'responded',
         updated_at: new Date().toISOString(),
       }).eq('id', values.reportId);
@@ -262,7 +281,8 @@ export function useResubmitReport() {
       // Handle File Upload for Resubmission
       if (values.verification_file && values.reportId) {
         const file = values.verification_file;
-        const fileName = `${values.reportId}/${Date.now()}_${file.name}`;
+        const sanitizedName = sanitizeFilename(file.name);
+        const fileName = `${values.reportId}/${Date.now()}_${sanitizedName}`;
         const filePath = `${fileName}`;
 
         const { error: uploadError } = await supabase.storage

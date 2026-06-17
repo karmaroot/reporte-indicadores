@@ -37,7 +37,7 @@ Deno.serve(async (req: Request) => {
     const { data: isAdmin } = await adminClient.rpc("has_role", { _user_id: callerId, _role: "admin" });
     if (!isAdmin) throw new Error("Not authorized");
 
-    const { email, password, name, role, institution_id } = await req.json();
+    const { email, password, name, role, institution_id, institution_ids } = await req.json();
     if (!email || !password || !name) throw new Error("email, password, and name are required");
 
     console.log(`Creating user: ${email} with name: ${name}`);
@@ -59,7 +59,7 @@ Deno.serve(async (req: Request) => {
       .update({ 
         name, 
         role: role || 'informant',
-        institution_id: institution_id || null 
+        institution_id: role === 'jefatura' ? null : (institution_id || null)
       })
       .eq('id', newUserId);
     
@@ -71,6 +71,18 @@ Deno.serve(async (req: Request) => {
       .upsert({ user_id: newUserId, role: role || 'informant' }, { onConflict: 'user_id' });
     
     if (roleError) console.error("Error updating user_roles:", roleError);
+
+    // Save multiple institutions for Jefatura
+    if (role === 'jefatura' && Array.isArray(institution_ids) && institution_ids.length > 0) {
+      const records = institution_ids.map((id: string) => ({
+        user_id: newUserId,
+        institution_id: id
+      }));
+      const { error: uiError } = await adminClient
+        .from('user_institutions')
+        .insert(records);
+      if (uiError) console.error("Error inserting user_institutions:", uiError);
+    }
 
     return new Response(JSON.stringify({ user: data.user }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

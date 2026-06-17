@@ -7,6 +7,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Loader2, Paperclip, X, FileText, Calendar, Tag, Info, AlertCircle, BookOpen } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from 'sonner';
+import { useReports } from '@/hooks/useSupabaseQuery';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
 
 interface ReportIndicatorDialogProps {
   open: boolean;
@@ -24,18 +26,21 @@ interface ReportIndicatorDialogProps {
     comment: string;
     verification_method: string;
     verification_file?: File | null;
+    is_zero_report?: boolean;
   }) => void;
   loading?: boolean;
   existingReport?: any;
 }
 
 export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePeriod, onSubmit, loading, existingReport }: ReportIndicatorDialogProps) {
+  const { data: reports } = useReports();
   const [numerator, setNumerator] = useState(existingReport?.numerator?.toString() ?? '');
   const [denominator, setDenominator] = useState(existingReport?.denominator?.toString() ?? '');
   const [comment, setComment] = useState(existingReport?.comment ?? '');
   const [verificationFile, setVerificationFile] = useState<File | null>(null);
   const [showZeroConfirm, setShowZeroConfirm] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  const [isZeroReport, setIsZeroReport] = useState(existingReport?.is_zero_report ?? false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isResubmitting = !!existingReport && open;
 
@@ -44,12 +49,14 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
       setNumerator(existingReport.numerator?.toString() ?? '');
       setDenominator(existingReport.denominator?.toString() ?? '');
       setComment(existingReport.comment ?? '');
+      setIsZeroReport(existingReport.is_zero_report ?? false);
     } else if (open) {
       // Clear for new reports
       setNumerator('');
       setDenominator('');
       setComment('');
       setVerificationFile(null);
+      setIsZeroReport(false);
     }
   }, [existingReport, open]);
 
@@ -58,10 +65,44 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
 
   // Logic to determine "Mes de Reporte" (Previous Month)
   const getReportingMonthAndDate = () => {
-    if (existingReport?.reporting_month) return { label: existingReport.reporting_month, date: new Date() }; // Date is fallback
+    if (existingReport?.reporting_month) {
+      const mLabel = existingReport.reporting_month;
+      const lowerMLabel = mLabel.toLowerCase();
+      let monthIndex = 0;
+      if (lowerMLabel.includes('enero')) monthIndex = 0;
+      else if (lowerMLabel.includes('febrero')) monthIndex = 1;
+      else if (lowerMLabel.includes('marzo')) monthIndex = 2;
+      else if (lowerMLabel.includes('abril')) monthIndex = 3;
+      else if (lowerMLabel.includes('mayo')) monthIndex = 4;
+      else if (lowerMLabel.includes('junio')) monthIndex = 5;
+      else if (lowerMLabel.includes('julio')) monthIndex = 6;
+      else if (lowerMLabel.includes('agosto')) monthIndex = 7;
+      else if (lowerMLabel.includes('septiembre')) monthIndex = 8;
+      else if (lowerMLabel.includes('octubre')) monthIndex = 9;
+      else if (lowerMLabel.includes('noviembre')) monthIndex = 10;
+      else if (lowerMLabel.includes('diciembre')) monthIndex = 11;
+      
+      const yearMatch = mLabel.match(/\d{4}/);
+      const year = yearMatch ? parseInt(yearMatch[0], 10) : new Date().getFullYear();
+      
+      const date = new Date(year, monthIndex, 15);
+      return { label: mLabel, date };
+    }
+    
     if (!activePeriod) return { label: '—', date: new Date() };
-    const date = new Date(activePeriod.start_date);
+    
+    // Parse "YYYY-MM-DD" timezone-safely
+    const parts = activePeriod.start_date.split('-');
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1; // 0-indexed
+    const day = parseInt(parts[2], 10);
+    
+    // Create local date
+    const date = new Date(year, month, day);
+    
+    // Subtract 1 month timezone-safely
     date.setMonth(date.getMonth() - 1);
+    
     return {
       label: date.toLocaleDateString('es', { month: 'long', year: 'numeric' }),
       date
@@ -76,7 +117,7 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
   const unitLower = indicator?.unit?.toLowerCase().trim() ?? '';
   const isQuantity = indicator?.indicator_type === 'quantity' || unitLower === 'cantidad';
 
-  // Logic to determine current quarterly target based on REPORT month
+  // Logic to determine current quarterly target based on active period start date or report month
   const getQuarterKey = (date: Date) => {
     const month = date.getMonth();
     if (month < 3) return { key: 'q1_prog', label: '1er Trimestre' };
@@ -85,16 +126,34 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
     return { key: 'q4_prog', label: '4to Trimestre' };
   };
 
-  const quarterInfo = activePeriod ? getQuarterKey(reportDate) : { key: 'q1_prog', label: 'Programación' };
+  const getQuarterDate = () => {
+    if (existingReport?.reporting_month) {
+      return reportDate;
+    }
+    if (activePeriod) {
+      const parts = activePeriod.start_date.split('-');
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1; // 0-indexed
+      const day = parseInt(parts[2], 10);
+      return new Date(year, month, day);
+    }
+    return new Date();
+  };
+
+  const quarterInfo = getQuarterKey(getQuarterDate());
   const quarterlyTarget = indicator?.[quarterInfo.key] ?? indicator?.target_value ?? 0;
 
   function computeValue(): number | null {
-    if (isQuantity) return isNaN(numVal) ? null : numVal;
+    if (isZeroReport) return 0;
+    if (isQuantity) return isNaN(numVal) ? null : Number(Number(numVal).toFixed(2));
     if (isNaN(numVal) || isNaN(denVal) || denVal === 0) return null;
+    let val = 0;
     if (unitLower.includes('%') || unitLower.includes('porcentaje')) {
-      return (numVal / denVal) * 100;
+      val = (numVal / denVal) * 100;
+    } else {
+      val = numVal / denVal;
     }
-    return numVal / denVal;
+    return Number(val.toFixed(2));
   }
 
   const computedValue = computeValue();
@@ -108,9 +167,7 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
   }
 
   const canSubmit =
-    numerator !== '' &&
-    (isQuantity || (denominator !== '' && denVal > 0)) &&
-    verificationFile !== null &&
+    (isZeroReport || (numerator !== '' && (isQuantity || (denominator !== '' && denVal > 0)) && verificationFile !== null)) &&
     comment.trim() !== '' &&
     !loading;
 
@@ -142,13 +199,14 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
       indicator_id: assignment.indicator_id,
       institution_id: instrument?.institution_id,
       period_id: finalPeriodId,
-      numerator: numVal,
-      denominator: isQuantity ? 1 : denVal,
-      reported_value: computedValue!,
+      numerator: isZeroReport ? 0 : numVal,
+      denominator: isZeroReport ? (isQuantity ? 1 : 0) : (isQuantity ? 1 : denVal),
+      reported_value: isZeroReport ? 0 : computedValue!,
       reporting_month: reportingMonth,
       comment,
-      verification_method: verificationFile?.name ?? '',
-      verification_file: verificationFile,
+      verification_method: isZeroReport ? '' : (verificationFile?.name ?? ''),
+      verification_file: isZeroReport ? null : verificationFile,
+      is_zero_report: isZeroReport,
     });
   }
 
@@ -157,7 +215,7 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
     if (!canSubmit) return;
     
     // Check for ZERO advance warning
-    if (numVal === 0) {
+    if (numVal === 0 && !isZeroReport) {
       setShowZeroConfirm(true);
       return;
     }
@@ -165,22 +223,46 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
     executeSubmit();
   }
 
-  const progressPercent = quarterlyTarget > 0 && computedValue !== null
-    ? Math.min((computedValue / quarterlyTarget) * 100, 100)
-    : 0;
+  const previousReports = (reports ?? []).filter((r: any) => 
+    r.indicator_id === indicator?.id && 
+    r.id !== existingReport?.id && 
+    ['submitted', 'under_review', 'responded', 'approved'].includes(r.status)
+  );
 
-  // Color logic for bar
-  const getProgressBarColor = () => {
-    if (computedValue === 0) return 'bg-red-500';
-    if (computedValue !== null && computedValue < quarterlyTarget) return 'bg-yellow-400';
-    if (computedValue !== null && computedValue >= quarterlyTarget) return 'bg-emerald-500';
-    return 'bg-muted';
-  };
+  let accumulatedValue = 0;
+  
+  if (isQuantity) {
+    const previousSum = previousReports.reduce((sum: number, r: any) => sum + (Number(r.reported_value) || 0), 0);
+    accumulatedValue = previousSum + (computedValue !== null ? computedValue : 0);
+  } else {
+    // For percentages or fractions, we sum numerators and denominators to get the accumulated total
+    const prevNumSum = previousReports.reduce((sum: number, r: any) => sum + (Number(r.numerator) || 0), 0);
+    const prevDenSum = previousReports.reduce((sum: number, r: any) => sum + (Number(r.denominator) || 0), 0);
+    
+    const totalNum = prevNumSum + (isNaN(numVal) ? 0 : numVal);
+    const totalDen = prevDenSum + (isNaN(denVal) ? 0 : denVal);
+
+    if (totalDen > 0) {
+      if (unitLower.includes('%') || unitLower.includes('porcentaje')) {
+        accumulatedValue = (totalNum / totalDen) * 100;
+      } else {
+        accumulatedValue = totalNum / totalDen;
+      }
+    }
+  }
+
+  const advanceColor = accumulatedValue === 0 ? '#ef4444' : (accumulatedValue < quarterlyTarget ? '#fbbf24' : '#10b981');
+
+  const chartData = [
+    { name: 'Meta', value: Number(indicator?.target_value) || 0, color: 'hsl(var(--muted-foreground))' },
+    { name: 'Prog.', value: Number(quarterlyTarget) || 0, color: 'hsl(var(--primary))' },
+    { name: 'Avance', value: Number(accumulatedValue.toFixed(2)), color: advanceColor }
+  ];
 
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-4xl w-full p-0 gap-0 overflow-hidden border-none shadow-2xl">
+        <DialogContent className="max-w-4xl w-full p-0 gap-0 overflow-y-auto max-h-[95vh] border-none shadow-2xl">
           <div className="px-6 pt-6 pb-4 border-b bg-background">
             <DialogTitle className="text-xl font-bold tracking-tight">
               {existingReport ? 'Corregir y Reenviar Reporte' : 'Reportar Indicador'}
@@ -273,7 +355,7 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
                 </div>
               </div>
 
-              <div className="px-8 py-6 space-y-6 bg-muted/10 relative">
+              <div className="px-8 py-6 bg-muted/10 relative flex flex-col justify-between h-full gap-6">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Información del Indicador</p>
@@ -325,45 +407,54 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
                 </div>
 
                 {/* KPI Visualization Card */}
-                <div className="rounded-xl border bg-card p-5 shadow-sm space-y-4 border-muted/50">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex-1 text-center space-y-1">
-                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-tighter">Programación</p>
-                      <div className="flex flex-col">
-                        <span className="text-3xl font-extrabold text-foreground">{quarterlyTarget}</span>
-                        <span className="text-[10px] text-muted-foreground font-medium">{indicator?.unit ?? ''}</span>
-                      </div>
-                    </div>
-                    
-                    <div className="text-muted-foreground/30 text-xl font-light italic">VS</div>
-                    
-                    <div className="flex-1 text-center space-y-1">
-                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-tighter">Avance Actual</p>
-                      <div className="flex flex-col">
-                        <span className={`text-3xl font-extrabold ${computedValue !== null ? 'text-primary' : 'text-muted-foreground/40'}`}>
-                          {computedValue !== null ? formatValue(computedValue) : '—'}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground font-medium">
-                          {(unitLower.includes('%') || unitLower.includes('porcentaje')) ? '' : (indicator?.unit ?? '')}
-                        </span>
-                      </div>
-                    </div>
+                <div className="rounded-xl border bg-card p-5 shadow-sm border-muted/50 flex flex-col flex-1 min-h-[240px] justify-between">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-tighter">Comparativa de Avances</p>
+                    <span className="text-[10px] text-muted-foreground font-medium italic opacity-60">
+                      * Incluye todos los periodos
+                    </span>
                   </div>
 
-                  <div className="space-y-2 pt-1">
-                    <div className="h-2.5 rounded-full bg-muted overflow-hidden shadow-inner border border-muted/20">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ease-out ${getProgressBarColor()}`}
-                        style={{ width: `${progressPercent}%` }}
-                      />
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] text-muted-foreground font-medium italic opacity-60">
-                        * Calculado sobre {quarterInfo.label}
-                      </span>
-                      <p className={`text-xs font-bold tracking-tight ${computedValue === 0 ? 'text-red-500' : 'text-foreground'}`}>
-                        {progressPercent.toFixed(1)}% de la programación trimestral
-                      </p>
+                  <div className="flex-1 w-full min-h-[180px] mt-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={chartData} margin={{ top: 15, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--muted))" />
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))', fontWeight: 600 }} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
+                        <Tooltip 
+                          cursor={{ fill: 'hsl(var(--muted)/0.4)' }}
+                          contentStyle={{ borderRadius: '8px', border: '1px solid hsl(var(--border))', fontSize: '12px', fontWeight: 'bold' }}
+                          formatter={(value: number) => [`${value} ${unitLower.includes('%') ? '%' : ''}`, '']}
+                        />
+                        <Bar 
+                          dataKey="value" 
+                          radius={[4, 4, 0, 0]} 
+                          maxBarSize={50} 
+                          isAnimationActive={true}
+                          label={{ position: 'top', fill: 'hsl(var(--foreground))', fontSize: 11, fontWeight: 'bold' }}
+                        >
+                          {chartData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  
+                  <div className="flex justify-between items-center pt-2 border-t border-muted/50">
+                    <div className="flex gap-4">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full" style={{ background: chartData[0].color }}></div>
+                        <span className="text-[10px] font-bold text-muted-foreground">{chartData[0].value} {unitLower.includes('%') ? '%' : ''} Meta</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full" style={{ background: chartData[1].color }}></div>
+                        <span className="text-[10px] font-bold text-muted-foreground">{chartData[1].value} {unitLower.includes('%') ? '%' : ''} Prog.</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full" style={{ background: chartData[2].color }}></div>
+                        <span className="text-[10px] font-bold text-foreground">{chartData[2].value} {unitLower.includes('%') ? '%' : ''} Avance</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -374,6 +465,31 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
                 <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Datos del Reporte</p>
 
                 <div className="space-y-5">
+                  {/* Checkbox "Reportar avance 'Cero'" */}
+                  <div className="flex items-center space-x-2.5 p-3.5 rounded-xl border border-amber-200/50 bg-amber-50/40 hover:bg-amber-50/70 transition-colors shadow-sm">
+                    <input
+                      type="checkbox"
+                      id="is-zero-report"
+                      checked={isZeroReport}
+                      onChange={e => {
+                        const checked = e.target.checked;
+                        setIsZeroReport(checked);
+                        if (checked) {
+                          setNumerator('0');
+                          setDenominator('0');
+                          setVerificationFile(null);
+                        } else {
+                          setNumerator('');
+                          setDenominator('');
+                        }
+                      }}
+                      className="h-4.5 w-4.5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                    />
+                    <Label htmlFor="is-zero-report" className="text-xs font-bold text-foreground cursor-pointer select-none leading-none">
+                      Reportar avance "Cero"
+                    </Label>
+                  </div>
+
                   {/* Advance / Formula Inputs */}
                   {!isQuantity ? (
                     <div className="space-y-4">
@@ -387,10 +503,11 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
                             type="number"
                             step="any"
                             placeholder="Ej. 10.5"
-                            className="h-11 font-medium px-4 focus-visible:ring-primary/20 transition-all border-muted-foreground/20"
+                            className="h-11 font-medium px-4 focus-visible:ring-primary/20 transition-all border-muted-foreground/20 disabled:bg-muted/50 disabled:cursor-not-allowed"
                             value={numerator}
                             onChange={e => setNumerator(e.target.value)}
-                            required
+                            required={!isZeroReport}
+                            disabled={isZeroReport}
                           />
                         </div>
                         <div className="space-y-2">
@@ -402,10 +519,11 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
                             type="number"
                             step="any"
                             placeholder="Ej. 2.0"
-                            className="h-11 font-medium px-4 focus-visible:ring-primary/20 transition-all border-muted-foreground/20"
+                            className="h-11 font-medium px-4 focus-visible:ring-primary/20 transition-all border-muted-foreground/20 disabled:bg-muted/50 disabled:cursor-not-allowed"
                             value={denominator}
                             onChange={e => setDenominator(e.target.value)}
-                            required
+                            required={!isZeroReport}
+                            disabled={isZeroReport}
                           />
                         </div>
                       </div>
@@ -430,10 +548,11 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
                           step="any"
                           min="0"
                           placeholder="Ingresa valor de avance"
-                          className="h-11 font-medium pl-4 focus-visible:ring-primary/20 transition-all border-muted-foreground/20"
+                          className="h-11 font-medium pl-4 focus-visible:ring-primary/20 transition-all border-muted-foreground/20 disabled:bg-muted/50 disabled:cursor-not-allowed"
                           value={numerator}
                           onChange={e => setNumerator(e.target.value)}
-                          required
+                          required={!isZeroReport}
+                          disabled={isZeroReport}
                         />
                       </div>
                     </div>
@@ -442,15 +561,17 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
                   {/* File Upload Component */}
                   <div className="space-y-2">
                     <Label className="text-xs font-bold text-foreground">
-                      Medio de Verificación <span className="text-destructive font-black">*</span>
+                      Medio de Verificación {!isZeroReport && <span className="text-destructive font-black">*</span>}
                     </Label>
                     <div
-                      className={`relative border-2 border-dashed rounded-xl p-5 transition-all cursor-pointer group ${
-                        verificationFile 
-                          ? 'border-primary/50 bg-primary/5 shadow-inner' 
-                          : 'border-muted-foreground/15 hover:border-primary/40 hover:bg-muted/30'
+                      className={`relative border-2 border-dashed rounded-xl p-5 transition-all group ${
+                        isZeroReport
+                          ? 'border-muted bg-muted/20 cursor-not-allowed opacity-60'
+                          : verificationFile 
+                            ? 'border-primary/50 bg-primary/5 shadow-inner cursor-pointer' 
+                            : 'border-muted-foreground/15 hover:border-primary/40 hover:bg-muted/30 cursor-pointer'
                       }`}
-                      onClick={() => !verificationFile && fileInputRef.current?.click()}
+                      onClick={() => !isZeroReport && !verificationFile && fileInputRef.current?.click()}
                     >
                       <input
                         ref={fileInputRef}
@@ -458,6 +579,7 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
                         className="hidden"
                         accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
                         onChange={handleFileChange}
+                        disabled={isZeroReport}
                       />
                       {verificationFile ? (
                         <div className="flex items-center gap-3">
@@ -478,7 +600,9 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
                             <Paperclip className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
                           </div>
                           <div>
-                            <p className="text-xs font-bold text-foreground group-hover:text-primary transition-colors">Haz clic para adjuntar archivo</p>
+                            <p className="text-xs font-bold text-foreground group-hover:text-primary transition-colors">
+                              {isZeroReport ? 'No requerido para avance "Cero"' : 'Haz clic para adjuntar archivo'}
+                            </p>
                             <p className="text-[10px] text-muted-foreground font-medium">PDF, Word, Excel, imágenes</p>
                           </div>
                         </div>

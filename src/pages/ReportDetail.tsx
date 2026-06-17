@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Paperclip, Send, CheckCircle, XCircle, Clock, Loader2, Download } from 'lucide-react';
+import { ArrowLeft, Paperclip, Send, CheckCircle, XCircle, Clock, Loader2, Download, AlertCircle } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import { Textarea } from '@/components/ui/textarea';
 import { useReport, useObservations, useAttachments } from '@/hooks/useSupabaseQuery';
@@ -19,6 +19,17 @@ export default function ReportDetail() {
   const { data: report, isLoading } = useReport(id);
   const { data: observations } = useObservations(id);
   const { data: attachments } = useAttachments(id);
+
+  const formatReportedValue = (val: any, indicator: any) => {
+    if (val === null || val === undefined) return '—';
+    const num = Number(val);
+    const unitLower = indicator?.unit?.toLowerCase().trim() ?? '';
+    const isQuantity = indicator?.indicator_type === 'quantity' || unitLower === 'cantidad';
+    if (isQuantity) {
+      return Number.isInteger(num) ? `${num}` : `${num.toFixed(2)}`;
+    }
+    return `${num.toFixed(2)}`;
+  };
 
   const approveReport = useApproveReport();
   const rejectReport = useRejectReport();
@@ -109,11 +120,24 @@ export default function ReportDetail() {
               <StatusBadge status={report.status as any} />
             </div>
 
+            {/* Zero Report Alert Indicator */}
+            {report.is_zero_report && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3 text-amber-800 mb-6">
+                <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide">Reporte de Avance "Cero"</p>
+                  <p className="text-xs font-medium leading-relaxed mt-1">
+                    El informante ha seleccionado la opción de <span className="font-bold underline">Reportar avance "Cero"</span> para este periodo. Por lo tanto, el numerador y denominador han sido deshabilitados y establecidos en cero.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div><p className="text-xs text-muted-foreground mb-1">Centro de Responsabilidad</p><p className="text-sm font-medium text-foreground">{inst?.name}</p></div>
               <div><p className="text-xs text-muted-foreground mb-1">Periodo</p><p className="text-sm font-medium text-foreground">{per?.name}</p></div>
-              <div><p className="text-xs text-muted-foreground mb-1">Valor Reportado</p><p className="text-2xl font-semibold text-foreground">{report.reported_value ?? '—'}</p></div>
-              <div><p className="text-xs text-muted-foreground mb-1">Programado</p><p className="text-2xl font-semibold text-muted-foreground">{ind?.target_value}</p></div>
+              <div><p className="text-xs text-muted-foreground mb-1">Valor Reportado</p><p className="text-2xl font-semibold text-foreground">{formatReportedValue(report.reported_value, ind)}</p></div>
+              <div><p className="text-xs text-muted-foreground mb-1">Programado</p><p className="text-2xl font-semibold text-muted-foreground">{formatReportedValue(ind?.target_value, ind)}</p></div>
             </div>
 
             {/* Numerator / Denominator */}

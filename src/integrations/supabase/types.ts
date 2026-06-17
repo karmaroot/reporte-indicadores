@@ -98,6 +98,7 @@ export type Database = {
           id: string
           indicator_id: string
           institution_id: string
+          is_zero_report: boolean | null
           numerator: number | null
           period_id: string
           reported_value: number | null
@@ -116,6 +117,7 @@ export type Database = {
           id?: string
           indicator_id: string
           institution_id: string
+          is_zero_report?: boolean | null
           numerator?: number | null
           period_id: string
           reported_value?: number | null
@@ -134,6 +136,7 @@ export type Database = {
           id?: string
           indicator_id?: string
           institution_id?: string
+          is_zero_report?: boolean | null
           numerator?: number | null
           period_id?: string
           reported_value?: number | null

@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'reviewer' | 'informant';
+export type UserRole = 'admin' | 'reviewer' | 'informant' | 'jefatura';
 export type InstitutionType = 'public' | 'private' | 'autonomous';
 export type IndicatorType = 'quantitative' | 'qualitative';
 export type ReportingFrequency = 'monthly' | 'quarterly' | 'annually';

@@ -17,14 +17,33 @@ export function useIndicators(filter?: { userId?: string, role?: string }) {
     queryKey: ['indicators', filter],
     queryFn: async () => {
       if (filter?.userId && filter?.role !== 'admin') {
-        const field = filter.role === 'reviewer' ? 'reviewer_id' : 'informant_id';
-        const { data, error } = await supabase
-          .from('instrument_indicators')
-          .select('indicators(*)')
-          .eq(field, filter.userId)
-          .eq('is_active', true);
-        if (error) throw error;
-        return (data ?? []).map(d => d.indicators as any);
+        if (filter.role === 'jefatura') {
+          const { data: insts, error: instsErr } = await supabase
+            .from('user_institutions')
+            .select('institution_id')
+            .eq('user_id', filter.userId);
+          if (instsErr) throw instsErr;
+          const institutionIds = (insts ?? []).map(i => i.institution_id);
+          if (institutionIds.length === 0) return [];
+
+          const { data, error } = await supabase
+            .from('instrument_indicators')
+            .select('indicators(*), instruments(institution_id)')
+            .eq('is_active', true);
+          if (error) throw error;
+          return (data ?? [])
+            .filter((d: any) => d.instruments && institutionIds.includes(d.instruments.institution_id))
+            .map((d: any) => d.indicators as any);
+        } else {
+          const field = filter.role === 'reviewer' ? 'reviewer_id' : 'informant_id';
+          const { data, error } = await supabase
+            .from('instrument_indicators')
+            .select('indicators(*)')
+            .eq(field, filter.userId)
+            .eq('is_active', true);
+          if (error) throw error;
+          return (data ?? []).map(d => d.indicators as any);
+        }
       }
       const { data, error } = await supabase.from('indicators').select('*').order('name');
       if (error) throw error;
@@ -52,9 +71,12 @@ export function useProfiles() {
       if (pErr) throw pErr;
       const { data: roles, error: rErr } = await supabase.from('user_roles').select('user_id, role');
       if (rErr) throw rErr;
+      const { data: insts, error: iErr } = await supabase.from('user_institutions').select('user_id, institution_id');
+      if (iErr) throw iErr;
       return (profiles ?? []).map(p => ({
         ...p,
         user_roles: (roles ?? []).filter(r => r.user_id === p.id),
+        user_institutions: (insts ?? []).filter(ui => ui.user_id === p.id),
       }));
     },
   });
@@ -66,7 +88,7 @@ export function useReports(filter?: { userId?: string, role?: string, status?: s
     queryFn: async () => {
       let query = supabase
         .from('indicator_reports')
-        .select('*, indicators(name, description, notes, target_value, unit, indicator_type, q1_prog, q2_prog, q3_prog, q4_prog), institutions(name), periods(name)')
+        .select('*, indicators(name, description, notes, target_value, unit, indicator_type, q1_prog, q2_prog, q3_prog, q4_prog), institutions(name), periods(name, start_date)')
         .order('created_at', { ascending: false });
 
       if (filter?.status) {
@@ -78,20 +100,31 @@ export function useReports(filter?: { userId?: string, role?: string, status?: s
       }
 
       if (filter?.userId && filter?.role !== 'admin') {
-        // Get assigned indicators first to be safe, or filter by created_by if informant
-        // The user wants filtering by assigned indicators.
-        const field = filter.role === 'reviewer' ? 'reviewer_id' : 'informant_id';
-        const { data: assignments } = await supabase
-          .from('instrument_indicators')
-          .select('indicator_id')
-          .eq(field, filter.userId)
-          .eq('is_active', true);
-        
-        const assignedIds = (assignments ?? []).map(a => a.indicator_id);
-        if (assignedIds.length > 0) {
-          query = query.in('indicator_id', assignedIds);
+        if (filter.role === 'jefatura') {
+          const { data: insts, error: instsErr } = await supabase
+            .from('user_institutions')
+            .select('institution_id')
+            .eq('user_id', filter.userId);
+          if (instsErr) throw instsErr;
+          const institutionIds = (insts ?? []).map(i => i.institution_id);
+          if (institutionIds.length === 0) return [];
+          query = query.in('institution_id', institutionIds);
         } else {
-          return []; // No assignments, no reports
+          // Get assigned indicators first to be safe, or filter by created_by if informant
+          // The user wants filtering by assigned indicators.
+          const field = filter.role === 'reviewer' ? 'reviewer_id' : 'informant_id';
+          const { data: assignments } = await supabase
+            .from('instrument_indicators')
+            .select('indicator_id')
+            .eq(field, filter.userId)
+            .eq('is_active', true);
+          
+          const assignedIds = (assignments ?? []).map(a => a.indicator_id);
+          if (assignedIds.length > 0) {
+            query = query.in('indicator_id', assignedIds);
+          } else {
+            return []; // No assignments, no reports
+          }
         }
       }
 
@@ -111,9 +144,9 @@ export function useReport(id: string | undefined) {
         .from('indicator_reports')
         .select(`
           *,
-          indicators(name, description, target_value, unit),
+          indicators(name, description, target_value, unit, indicator_type, q1_prog, q2_prog, q3_prog, q4_prog),
           institutions(name),
-          periods(name),
+          periods(name, start_date),
           creator:created_by(name)
         `)
         .eq('id', id!)
