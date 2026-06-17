@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { BRANDING } from '@/config/branding';
 
 export default function ResetPassword() {
   const [password, setPassword] = useState('');
@@ -36,7 +37,7 @@ export default function ResetPassword() {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <img src="/favicon.png" alt="AGE Logo" className="h-12 w-12 rounded-lg mx-auto mb-4 object-contain shadow-sm" />
+          <img src={BRANDING.assets.logo} alt={`${BRANDING.institution.shortName} Logo`} className="h-12 w-12 rounded-lg mx-auto mb-4 object-contain shadow-sm" />
           <h1 className="text-2xl font-semibold text-foreground">Restablecer Contraseña</h1>
           <p className="text-sm text-muted-foreground mt-1">Ingresa tu nueva contraseña a continuación</p>
         </div>

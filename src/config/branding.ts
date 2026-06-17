@@ -14,8 +14,8 @@ export const BRANDING = {
     version: "v1.0",
   },
   assets: {
-    logo: "/favicon.png",
-    favicon: "/favicon.png",
+    logo: `${import.meta.env.BASE_URL || "/"}favicon.png`,
+    favicon: `${import.meta.env.BASE_URL || "/"}favicon.png`,
   },
   meta: {
     title: "SGI - Sistema de Gestión de Indicadores",
