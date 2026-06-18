@@ -5,10 +5,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import { Loader2, CheckCircle2, Building2 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Loader2, CheckCircle2, Building2, X, FileText, Calendar } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
 import { useAuth } from '@/hooks/useAuth';
+import { StatusBadge } from '@/components/shared/StatusBadge';
 
 function useDashboardData(userId?: string, userRole?: string | null) {
   return useQuery({
@@ -17,12 +18,12 @@ function useDashboardData(userId?: string, userRole?: string | null) {
       let query = supabase.from('institutions').select('*').order('name');
 
       if (userRole === 'jefatura' && userId) {
-        const { data: userInsts, error: uiErr } = await supabase
+        const { data: userInsts, error: uiErr } = await (supabase as any)
           .from('user_institutions')
           .select('institution_id')
           .eq('user_id', userId);
         if (uiErr) throw uiErr;
-        const institutionIds = (userInsts ?? []).map(ui => ui.institution_id);
+        const institutionIds = (userInsts ?? []).map((ui: any) => ui.institution_id);
         
         if (institutionIds.length === 0) return [];
         query = query.in('id', institutionIds);
@@ -34,16 +35,31 @@ function useDashboardData(userId?: string, userRole?: string | null) {
       const { data: instruments, error: insErr } = await supabase.from('instruments').select('*').eq('is_active', true);
       if (insErr) throw insErr;
 
-      const { data: indicators, error: indErr } = await supabase
+      const { data: indicators, error: indErr } = await (supabase as any)
         .from('indicators')
-        .select(`*, indicator_reports (reported_value, status, period_id, numerator, denominator)`)
+        .select(`
+          *,
+          indicator_reports (
+            id,
+            reported_value,
+            status,
+            period_id,
+            numerator,
+            denominator,
+            comment,
+            created_at,
+            periods (
+              name
+            )
+          )
+        `)
         .eq('is_active', true);
       if (indErr) throw indErr;
 
       const data = institutions.map(inst => {
         const instInstruments = instruments.filter(i => i.institution_id === inst.id);
         const instrumentsWithIndicators = instInstruments.map(instrument => {
-          const instInds = indicators.filter(ind => ind.instrument_id === instrument.id);
+          const instInds = (indicators as any[] || []).filter(ind => ind.instrument_id === instrument.id);
           return {
             ...instrument,
             indicators: instInds
@@ -135,7 +151,15 @@ const LiquidDrum = ({ value, label, onClick }: { value: number, label: string, o
   );
 };
 
-const IndicatorBar = ({ indicator }: { indicator: any }) => {
+const IndicatorBar = ({ 
+  indicator, 
+  onClick, 
+  isSelected 
+}: { 
+  indicator: any; 
+  onClick?: () => void; 
+  isSelected?: boolean; 
+}) => {
   const target = Number(indicator.target_value) || 0;
   const quarterTarget = getQuarterTarget(indicator);
   const realTime = getRealTimeProgress(indicator);
@@ -152,7 +176,14 @@ const IndicatorBar = ({ indicator }: { indicator: any }) => {
   ];
 
   return (
-    <div className="bg-card p-5 rounded-xl border shadow-sm space-y-4 flex flex-col justify-between">
+    <div 
+      onClick={onClick}
+      className={`bg-card p-5 rounded-xl border transition-all duration-300 space-y-4 flex flex-col justify-between cursor-pointer select-none ${
+        isSelected 
+          ? 'border-primary ring-2 ring-primary/20 shadow-md scale-[1.01]' 
+          : 'hover:border-muted-foreground/30 shadow-sm'
+      }`}
+    >
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <p className="text-sm font-bold text-foreground leading-tight">{indicator.name}</p>
         <div className="flex items-center gap-2 shrink-0">
@@ -162,6 +193,13 @@ const IndicatorBar = ({ indicator }: { indicator: any }) => {
           {isFulfilled && <CheckCircle2 className="w-5 h-5 text-emerald-500" />}
         </div>
       </div>
+
+      {indicator.description && (
+        <div className="text-xs text-muted-foreground bg-muted/40 p-3 rounded-lg border border-muted/50 transition-colors">
+          <span className="font-bold text-foreground block mb-1">Fórmula / Descripción:</span>
+          {indicator.description}
+        </div>
+      )}
 
       <div className="h-[200px] w-full mt-2">
         <ResponsiveContainer width="100%" height="100%">
@@ -213,6 +251,7 @@ export default function AdminDashboard() {
   const { user, userRole } = useAuth();
   const { data: dashboardData, isLoading } = useDashboardData(user?.id, userRole);
   const [selectedInstrument, setSelectedInstrument] = useState<any | null>(null);
+  const [selectedIndicator, setSelectedIndicator] = useState<any | null>(null);
 
   return (
     <AppLayout>
@@ -287,7 +326,12 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      <Sheet open={!!selectedInstrument} onOpenChange={(open) => !open && setSelectedInstrument(null)}>
+      <Sheet open={!!selectedInstrument} onOpenChange={(open) => {
+        if (!open) {
+          setSelectedInstrument(null);
+          setSelectedIndicator(null);
+        }
+      }}>
         <SheetContent className="w-full sm:max-w-2xl overflow-y-auto sm:border-l border-muted/50 p-0">
           {selectedInstrument && (
             <div className="flex flex-col h-full bg-muted/10">
@@ -305,10 +349,126 @@ export default function AdminDashboard() {
                   </div>
                 ) : (
                   selectedInstrument.indicators.map((ind: any) => (
-                    <IndicatorBar key={ind.id} indicator={ind} />
+                    <IndicatorBar 
+                      key={ind.id} 
+                      indicator={ind} 
+                      onClick={() => setSelectedIndicator(ind)}
+                      isSelected={selectedIndicator?.id === ind.id}
+                    />
                   ))
                 )}
               </div>
+
+              {/* Reports Panel on the Left */}
+              <AnimatePresence>
+                {selectedIndicator && (
+                  <motion.div
+                    initial={{ opacity: 0, x: -30 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -30 }}
+                    transition={{ duration: 0.25, ease: "easeOut" }}
+                    className="hidden lg:flex flex-col fixed left-6 top-6 bottom-6 right-[700px] bg-card rounded-2xl border border-border shadow-2xl overflow-hidden z-50 animate-in fade-in duration-200"
+                  >
+                    {/* Header */}
+                    <div className="p-6 bg-background border-b flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-5 w-5 text-primary" />
+                        <div>
+                          <h3 className="font-extrabold text-lg leading-none text-foreground">Historial de Reportes</h3>
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">Avance por Período</p>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => setSelectedIndicator(null)}
+                        className="h-8 w-8 rounded-lg hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    {/* Subheader: Indicator info */}
+                    <div className="p-6 bg-muted/20 border-b space-y-2">
+                      <h4 className="text-sm font-bold text-foreground leading-tight">{selectedIndicator.name}</h4>
+                      {selectedIndicator.description && (
+                        <div className="text-xs text-muted-foreground bg-background p-3 rounded-lg border border-border/50">
+                          <span className="font-bold text-foreground block mb-0.5">Fórmula / Descripción:</span>
+                          {selectedIndicator.description}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Report List */}
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-muted/5 custom-scrollbar">
+                      {(() => {
+                        const reports = selectedIndicator.indicator_reports || [];
+                        if (reports.length === 0) {
+                          return (
+                            <div className="h-full flex flex-col items-center justify-center text-center py-20 bg-background rounded-xl border border-dashed p-6">
+                              <Calendar className="h-10 w-10 text-muted-foreground mb-3 opacity-50" />
+                              <p className="text-sm font-semibold text-foreground">Sin reportes registrados</p>
+                              <p className="text-xs text-muted-foreground mt-1">No se han ingresado avances para este indicador en ningún período.</p>
+                            </div>
+                          );
+                        }
+
+                        const sortedReports = [...reports].sort((a: any, b: any) => 
+                          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                        );
+
+                        return sortedReports.map((report: any) => {
+                          const unit = selectedIndicator.unit || '';
+                          const showFraction = report.numerator !== null && report.denominator !== null;
+
+                          return (
+                            <div key={report.id} className="bg-card rounded-xl border border-border shadow-sm p-4 space-y-3 hover:shadow-md transition-shadow duration-200">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-black uppercase tracking-wider text-muted-foreground font-mono">
+                                  {report.periods?.name || report.period?.name || 'Período'}
+                                </span>
+                                <StatusBadge status={report.status} />
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-4 py-2 border-y border-muted/50">
+                                <div>
+                                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Valor Reportado</p>
+                                  <p className="text-base font-black text-foreground mt-0.5">
+                                    {report.reported_value !== null ? `${Number(report.reported_value).toFixed(2)} ${unit}` : `0 ${unit}`}
+                                  </p>
+                                </div>
+                                {showFraction && (
+                                  <div>
+                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Cálculo</p>
+                                    <p className="text-xs font-bold text-foreground mt-1">
+                                      {report.numerator} / {report.denominator}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+
+                              {report.comment && (
+                                <div className="text-xs text-muted-foreground bg-muted/30 p-3 rounded-lg border border-muted/30">
+                                  <span className="font-semibold text-foreground block mb-0.5">Comentario:</span>
+                                  {report.comment}
+                                </div>
+                              )}
+
+                              <div className="text-[9px] font-bold text-muted-foreground text-right">
+                                Reportado el {new Date(report.created_at).toLocaleDateString('es-CL', {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           )}
         </SheetContent>

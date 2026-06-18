@@ -503,6 +503,45 @@ export type Database = {
           },
         ]
       }
+      email_notification_settings: {
+        Row: {
+          custom_cc: string[] | null
+          description: string | null
+          display_name: string
+          event_type: string
+          id: string
+          is_enabled: boolean | null
+          notify_roles: string[] | null
+          subject_template: string
+          body_template: string
+          updated_at: string
+        }
+        Insert: {
+          custom_cc?: string[] | null
+          description?: string | null
+          display_name: string
+          event_type: string
+          id?: string
+          is_enabled?: boolean | null
+          notify_roles?: string[] | null
+          subject_template: string
+          body_template: string
+          updated_at?: string
+        }
+        Update: {
+          custom_cc?: string[] | null
+          description?: string | null
+          display_name?: string
+          event_type?: string
+          id?: string
+          is_enabled?: boolean | null
+          notify_roles?: string[] | null
+          subject_template?: string
+          body_template?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
