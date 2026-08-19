@@ -312,6 +312,35 @@ export function useResubmitReport() {
   });
 }
 
+// --- Reviewer: Evaluate report (Post-resubmission final evaluation dropdown) ---
+export function useEvaluateReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ reportId, evaluationStatus, status }: { reportId: string; evaluationStatus: string; status: 'approved' | 'rejected' }) => {
+      const updatePayload: any = {
+        status,
+        evaluation_status: evaluationStatus,
+        reviewed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase.from('indicator_reports').update(updatePayload).eq('id', reportId);
+      if (error) {
+        delete updatePayload.evaluation_status;
+        const { error: fallbackErr } = await supabase.from('indicator_reports').update(updatePayload).eq('id', reportId);
+        if (fallbackErr) throw fallbackErr;
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['reports'] });
+      qc.invalidateQueries({ queryKey: ['report'] });
+      qc.invalidateQueries({ queryKey: ['report-counts'] });
+      toast.success('Dictamen final registrado exitosamente');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+}
+
 // --- Reviewer: Approve report ---
 export function useApproveReport() {
   const qc = useQueryClient();
@@ -319,10 +348,18 @@ export function useApproveReport() {
     mutationFn: async (reportId: string) => {
       const { error } = await supabase.from('indicator_reports').update({
         status: 'approved',
+        evaluation_status: 'avance_normal',
         reviewed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq('id', reportId);
-      if (error) throw error;
+      if (error) {
+        const { error: fallbackErr } = await supabase.from('indicator_reports').update({
+          status: 'approved',
+          reviewed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('id', reportId);
+        if (fallbackErr) throw fallbackErr;
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['reports'] });

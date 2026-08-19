@@ -1,4 +1,64 @@
-import type { ReportStatus, ObservationStatus } from '@/types/database';
+import { ReportStatus, ObservationStatus } from '../types/database';
+
+export interface EvaluationOption {
+  id: string;
+  label: string;
+  bgColor: string;
+  textColor: string;
+  tooltip: string;
+  status: 'approved' | 'rejected';
+}
+
+export const EVALUATION_OPTIONS: Record<string, EvaluationOption> = {
+  avance_normal: {
+    id: 'avance_normal',
+    label: 'Avance Normal',
+    bgColor: '#93D63B',
+    textColor: '#ffffff',
+    tooltip: 'ejecución de acuerdo con la programación definida por cada centro de responsabilidad.',
+    status: 'approved',
+  },
+  bajo_programado: {
+    id: 'bajo_programado',
+    label: 'Bajo lo Programado',
+    bgColor: '#D6C917',
+    textColor: '#1a1a00',
+    tooltip: 'ejecución menor a la programación establecida por el centro de responsabilidad.',
+    status: 'approved',
+  },
+  en_riesgo: {
+    id: 'en_riesgo',
+    label: 'En riesgo de cumplimiento',
+    bgColor: '#FF0000',
+    textColor: '#ffffff',
+    tooltip: 'ejecución significativamente menor a la programación definida, poniendo en riesgo la consecución de la meta establecida para el año.',
+    status: 'approved',
+  },
+  inconsistente: {
+    id: 'inconsistente',
+    label: 'Inconsistente',
+    bgColor: '#E5D2C4',
+    textColor: '#4a2e1b',
+    tooltip: 'los datos reportados no se condicen con lo definido en el indicador.',
+    status: 'rejected',
+  },
+  incompleto: {
+    id: 'incompleto',
+    label: 'Incompleto',
+    bgColor: '#00FFFF',
+    textColor: '#004d4d',
+    tooltip: 'no se entregan todos los antecedentes para determinar el avance del indicador.',
+    status: 'rejected',
+  },
+  sin_reporte: {
+    id: 'sin_reporte',
+    label: 'Sin reporte',
+    bgColor: '#E5E5E5',
+    textColor: '#404040',
+    tooltip: 'centro de responsabilidad no informa datos a la fecha de corte.',
+    status: 'rejected',
+  },
+};
 
 export const REPORT_STATUS_CONFIG: Record<ReportStatus, { label: string; className: string }> = {
   draft:        { label: 'Borrador',                                    className: 'bg-slate-100 text-slate-700' },

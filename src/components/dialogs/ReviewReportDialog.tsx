@@ -5,11 +5,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import {
   CheckCircle2, XCircle, Loader2, Calendar, Tag, BookOpen, User,
-  Paperclip, MessageSquare, Clock, Info, X, FileText, Download, AlertCircle
+  Paperclip, MessageSquare, Clock, Info, X, FileText, Download, AlertCircle, ShieldAlert
 } from 'lucide-react';
-import { useApproveReport, useRejectReport } from '@/hooks/useSupabaseMutations';
+import { useApproveReport, useRejectReport, useEvaluateReport } from '@/hooks/useSupabaseMutations';
 import { useObservations, useAttachments } from '@/hooks/useSupabaseQuery';
 import { useAuth } from '@/hooks/useAuth';
+import { EVALUATION_OPTIONS } from '@/lib/constants';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -23,11 +24,13 @@ export function ReviewReportDialog({ open, onOpenChange, report }: ReviewReportD
   const { user } = useAuth();
   const approveReport = useApproveReport();
   const rejectReport = useRejectReport();
+  const evaluateReport = useEvaluateReport();
   const { data: observations } = useObservations(report?.id);
   const { data: attachments } = useAttachments(report?.id);
 
   const [mode, setMode] = useState<'actions' | 'reject'>('actions');
   const [rejectComment, setRejectComment] = useState('');
+  const [selectedEvaluation, setSelectedEvaluation] = useState<string>('avance_normal');
   const [showNotesPanel, setShowNotesPanel] = useState(false);
 
   if (!report) return null;
@@ -419,91 +422,166 @@ export function ReviewReportDialog({ open, onOpenChange, report }: ReviewReportD
           {/* COLUMN 3: RESOLUTION SIDEBAR */}
           <div className="bg-muted/10 flex flex-col p-8 space-y-8 overflow-y-auto pt-10">
             {canReview ? (
-              <div className="flex-1 flex flex-col gap-8">
-                {mode === 'actions' && (
-                  <>
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-3 text-emerald-600">
-                        <div className="h-8 w-8 rounded-lg bg-emerald-50 flex items-center justify-center">
-                          <CheckCircle2 className="h-5 w-5" />
+              <div className="flex-1 flex flex-col gap-6">
+                {report.status === 'responded' ? (
+                  /* Post-resubmission (Iteración Única): Mandatory Dropdown Evaluation */
+                  <div className="space-y-6 animate-in fade-in duration-300">
+                    <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl flex items-start gap-3">
+                      <ShieldAlert className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="text-xs font-black uppercase text-amber-900 dark:text-amber-200 tracking-tight">Segunda Instancia (Evaluación Final)</p>
+                        <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-snug font-medium">
+                          Este reporte ya fue subsanado anteriormente. Según la regla de iteración única, debes emitir el dictamen final seleccionando una opción del menú.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <label htmlFor="eval-select" className="text-xs font-bold text-foreground block">
+                        Dictamen de Evaluación Final <span className="text-destructive font-black">*</span>
+                      </label>
+                      <select
+                        id="eval-select"
+                        value={selectedEvaluation}
+                        onChange={e => setSelectedEvaluation(e.target.value)}
+                        className="w-full h-12 rounded-xl border border-muted-foreground/30 bg-background px-4 text-xs font-bold text-foreground focus:ring-2 focus:ring-primary/20 shadow-sm"
+                      >
+                        {Object.values(EVALUATION_OPTIONS).map(opt => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.label} ({opt.status === 'approved' ? 'Aprobado' : 'Rechazado'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Tooltip Card & Color Badge */}
+                    {EVALUATION_OPTIONS[selectedEvaluation] && (
+                      <div className="p-4 rounded-xl border space-y-2 transition-all shadow-sm" style={{ backgroundColor: `${EVALUATION_OPTIONS[selectedEvaluation].bgColor}15`, borderColor: EVALUATION_OPTIONS[selectedEvaluation].bgColor }}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full shadow-sm" style={{ backgroundColor: EVALUATION_OPTIONS[selectedEvaluation].bgColor, color: EVALUATION_OPTIONS[selectedEvaluation].textColor }}>
+                            {EVALUATION_OPTIONS[selectedEvaluation].label}
+                          </span>
+                          <span className="text-[10px] font-mono font-bold uppercase text-muted-foreground">
+                            Color: {EVALUATION_OPTIONS[selectedEvaluation].bgColor}
+                          </span>
                         </div>
-                        <p className="text-sm font-black uppercase tracking-tight">Aprobación</p>
+                        <p className="text-xs text-foreground/90 font-medium leading-relaxed italic border-t pt-2 border-muted/30">
+                          "{EVALUATION_OPTIONS[selectedEvaluation].tooltip}"
+                        </p>
                       </div>
-                      <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">
-                        Confirma que los datos reportados son válidos y consistentes con el respaldo técnico adjunto.
-                      </p>
-                      <Button
-                        className="w-full h-14 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-widest transition-all shadow-xl shadow-emerald-600/20 active:scale-95 rounded-2xl"
-                        onClick={handleApprove}
-                        disabled={approveReport.isPending}
-                      >
-                        {approveReport.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : "APROBAR REPORTE"}
-                      </Button>
-                    </div>
+                    )}
 
-                    <div className="flex items-center gap-4 opacity-20">
-                      <div className="h-px bg-muted-foreground flex-1" />
-                      <span className="text-[10px] font-black">OPCIÓN</span>
-                      <div className="h-px bg-muted-foreground flex-1" />
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-3 text-rose-600">
-                        <div className="h-8 w-8 rounded-lg bg-rose-50 flex items-center justify-center">
-                          <XCircle className="h-5 w-5" />
-                        </div>
-                        <p className="text-sm font-black uppercase tracking-tight">Rechazo Técnico</p>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">
-                        Emite una observación si detectas errores o inconsistencias en los datos o en el verificador.
-                      </p>
-                      <Button
-                        variant="outline"
-                        className="w-full h-14 border-rose-200 text-rose-600 hover:bg-rose-50 font-black text-xs uppercase tracking-widest transition-all rounded-2xl active:scale-95"
-                        onClick={() => setMode('reject')}
-                      >
-                        RECHAZAR CON OBSERVACIONES
-                      </Button>
-                    </div>
-                  </>
-                )}
-
-                {mode === 'reject' && (
-                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <div className="flex items-center gap-3 text-rose-600">
-                      <div className="h-8 w-8 rounded-lg bg-rose-50 flex items-center justify-center">
-                        <XCircle className="h-5 w-5" />
-                      </div>
-                      <p className="text-sm font-black uppercase tracking-tight italic">Emitir Observación</p>
-                    </div>
-                    
-                    <div className="space-y-2">
-                       <p className="text-[10px] font-bold text-muted-foreground uppercase ml-1">Detalle del Hallazgo</p>
-                       <Textarea
-                        placeholder="Describe el motivo del rechazo y qué debe corregir el informante..."
-                        value={rejectComment}
-                        onChange={e => setRejectComment(e.target.value)}
-                        className="min-h-[220px] text-sm font-medium resize-none border-rose-200 focus-visible:ring-rose-500/20 rounded-2xl p-4 bg-white"
-                      />
-                    </div>
-
-                    <div className="flex flex-col gap-3 pt-2">
-                      <Button
-                        className="w-full bg-rose-600 hover:bg-rose-700 text-white font-black text-xs uppercase tracking-widest h-14 rounded-2xl shadow-xl shadow-rose-600/20 active:scale-95"
-                        onClick={handleReject}
-                        disabled={!rejectComment.trim() || rejectReport.isPending}
-                      >
-                        {rejectReport.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : "CONFIRMAR RECHAZO"}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="w-full text-xs font-black uppercase tracking-widest text-muted-foreground hover:bg-muted/50 h-11"
-                        onClick={() => { setMode('actions'); setRejectComment(''); }}
-                      >
-                        CANCELAR Y VOLVER
-                      </Button>
-                    </div>
+                    <Button
+                      className="w-full h-14 font-black text-xs uppercase tracking-widest transition-all shadow-xl rounded-2xl active:scale-95 text-white"
+                      style={{ backgroundColor: EVALUATION_OPTIONS[selectedEvaluation]?.bgColor || '#10b981', color: EVALUATION_OPTIONS[selectedEvaluation]?.textColor || '#ffffff' }}
+                      onClick={() => {
+                        const opt = EVALUATION_OPTIONS[selectedEvaluation];
+                        if (!opt) return;
+                        evaluateReport.mutate({
+                          reportId: report.id,
+                          evaluationStatus: opt.id,
+                          status: opt.status
+                        }, {
+                          onSuccess: () => {
+                            onOpenChange(false);
+                            setMode('actions');
+                          }
+                        });
+                      }}
+                      disabled={evaluateReport.isPending}
+                    >
+                      {evaluateReport.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : "CONFIRMAR DICTAMEN FINAL"}
+                    </Button>
                   </div>
+                ) : (
+                  /* Standard First Review Actions */
+                  <>
+                    {mode === 'actions' && (
+                      <>
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-3 text-emerald-600">
+                            <div className="h-8 w-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+                              <CheckCircle2 className="h-5 w-5" />
+                            </div>
+                            <p className="text-sm font-black uppercase tracking-tight">Aprobación</p>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">
+                            Confirma que los datos reportados son válidos y consistentes con el respaldo técnico adjunto.
+                          </p>
+                          <Button
+                            className="w-full h-14 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-widest transition-all shadow-xl shadow-emerald-600/20 active:scale-95 rounded-2xl"
+                            onClick={handleApprove}
+                            disabled={approveReport.isPending}
+                          >
+                            {approveReport.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : "APROBAR REPORTE"}
+                          </Button>
+                        </div>
+
+                        <div className="flex items-center gap-4 opacity-20">
+                          <div className="h-px bg-muted-foreground flex-1" />
+                          <span className="text-[10px] font-black">OPCIÓN</span>
+                          <div className="h-px bg-muted-foreground flex-1" />
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-3 text-rose-600">
+                            <div className="h-8 w-8 rounded-lg bg-rose-50 flex items-center justify-center">
+                              <XCircle className="h-5 w-5" />
+                            </div>
+                            <p className="text-sm font-black uppercase tracking-tight">Observar y Devolver</p>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">
+                            Emite una observación técnica para que el informante corrija los datos (se permite 1 sola resupresión).
+                          </p>
+                          <Button
+                            variant="outline"
+                            className="w-full h-14 border-rose-200 text-rose-600 hover:bg-rose-50 font-black text-xs uppercase tracking-widest transition-all rounded-2xl active:scale-95"
+                            onClick={() => setMode('reject')}
+                          >
+                            OBSERVAR Y DEVOLVER
+                          </Button>
+                        </div>
+                      </>
+                    )}
+
+                    {mode === 'reject' && (
+                      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        <div className="flex items-center gap-3 text-rose-600">
+                          <div className="h-8 w-8 rounded-lg bg-rose-50 flex items-center justify-center">
+                            <XCircle className="h-5 w-5" />
+                          </div>
+                          <p className="text-sm font-black uppercase tracking-tight italic">Emitir Observación</p>
+                        </div>
+                        
+                        <div className="space-y-2">
+                           <p className="text-[10px] font-bold text-muted-foreground uppercase ml-1">Detalle del Hallazgo</p>
+                           <Textarea
+                            placeholder="Describe el motivo del rechazo y qué debe corregir el informante..."
+                            value={rejectComment}
+                            onChange={e => setRejectComment(e.target.value)}
+                            className="min-h-[220px] text-sm font-medium resize-none border-rose-200 focus-visible:ring-rose-500/20 rounded-2xl p-4 bg-white"
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-3 pt-2">
+                          <Button
+                            className="w-full bg-rose-600 hover:bg-rose-700 text-white font-black text-xs uppercase tracking-widest h-14 rounded-2xl shadow-xl shadow-rose-600/20 active:scale-95"
+                            onClick={handleReject}
+                            disabled={!rejectComment.trim() || rejectReport.isPending}
+                          >
+                            {rejectReport.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : "ENVIAR OBSERVACIÓN"}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            className="w-full text-xs font-black uppercase tracking-widest text-muted-foreground hover:bg-muted/50 h-11"
+                            onClick={() => { setMode('actions'); setRejectComment(''); }}
+                          >
+                            CANCELAR Y VOLVER
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             ) : (

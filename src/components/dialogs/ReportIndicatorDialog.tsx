@@ -44,6 +44,8 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isResubmitting = !!existingReport && open;
 
+  const [hasPrefilled, setHasPrefilled] = useState(false);
+
   useEffect(() => {
     if (isResubmitting) {
       setNumerator(existingReport.numerator?.toString() ?? '');
@@ -51,14 +53,25 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
       setComment(existingReport.comment ?? '');
       setIsZeroReport(existingReport.is_zero_report ?? false);
     } else if (open) {
-      // Clear for new reports
-      setNumerator('');
-      setDenominator('');
-      setComment('');
+      const prevReport = (reports ?? [])
+        .filter((r: any) => r.indicator_id === assignment?.indicator_id && ['submitted', 'responded', 'approved'].includes(r.status))
+        .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
+      if (prevReport) {
+        setNumerator(prevReport.numerator?.toString() ?? '');
+        setDenominator(prevReport.denominator?.toString() ?? '');
+        setComment(prevReport.comment ?? '');
+        setHasPrefilled(true);
+      } else {
+        setNumerator('');
+        setDenominator('');
+        setComment('');
+        setHasPrefilled(false);
+      }
       setVerificationFile(null);
       setIsZeroReport(false);
     }
-  }, [existingReport, open]);
+  }, [existingReport, open, reports, assignment, isResubmitting]);
 
   const indicator = assignment?.indicators;
   const instrument = assignment?.instruments;
@@ -166,9 +179,14 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
     return val.toFixed(2);
   }
 
+  const cleanComment = comment.trim();
+  const hasMinCommentLength = cleanComment.length >= 100;
+  const isForbiddenComment = cleanComment.toLowerCase().includes('sin observaciones');
+
   const canSubmit =
     (isZeroReport || (numerator !== '' && (isQuantity || (denominator !== '' && denVal > 0)) && verificationFile !== null)) &&
-    comment.trim() !== '' &&
+    hasMinCommentLength &&
+    !isForbiddenComment &&
     !loading;
 
   const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
@@ -223,10 +241,13 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
     executeSubmit();
   }
 
+  const currentStartDate = existingReport?.periods?.start_date || activePeriod?.start_date;
+
   const previousReports = (reports ?? []).filter((r: any) => 
     r.indicator_id === indicator?.id && 
     r.id !== existingReport?.id && 
-    ['submitted', 'under_review', 'responded', 'approved'].includes(r.status)
+    ['submitted', 'under_review', 'responded', 'approved'].includes(r.status) &&
+    (!currentStartDate || (r.periods?.start_date && r.periods.start_date < currentStartDate))
   );
 
   let accumulatedValue = 0;
@@ -610,20 +631,50 @@ export function ReportIndicatorDialog({ open, onOpenChange, assignment, activePe
                     </div>
                   </div>
 
+                  {/* Prefill indicator notice */}
+                  {hasPrefilled && !isResubmitting && (
+                    <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg flex items-center gap-2 text-xs text-blue-700 dark:text-blue-300">
+                      <Info className="h-4 w-4 shrink-0" />
+                      <span>Valores e insumos del periodo anterior precargados. Puedes editarlos para ingresar el nuevo acumulado.</span>
+                    </div>
+                  )}
+
                   {/* Observations Textarea */}
                   <div className="space-y-2">
-                    <Label htmlFor="comment" className="text-xs font-bold text-foreground">
-                      Observaciones <span className="text-destructive font-black">*</span>
-                    </Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="comment" className="text-xs font-bold text-foreground">
+                        Observaciones / Justificación <span className="text-destructive font-black">*</span>
+                      </Label>
+                      <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded ${
+                        hasMinCommentLength ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        {cleanComment.length} / 100 mín.
+                      </span>
+                    </div>
                     <Textarea
                       id="comment"
-                      placeholder="Describe los detalles relevantes de este reporte..."
+                      placeholder="Describe justificadamente y en detalle los avances de este periodo (mínimo 100 caracteres)..."
                       value={comment}
                       onChange={e => setComment(e.target.value)}
                       rows={4}
                       required
-                      className="resize-none h-28 focus-visible:ring-primary/20 border-muted-foreground/20 font-medium text-sm p-4"
+                      className={`resize-none h-28 focus-visible:ring-primary/20 font-medium text-sm p-4 ${
+                        isForbiddenComment || (cleanComment.length > 0 && !hasMinCommentLength)
+                          ? 'border-amber-500/50'
+                          : 'border-muted-foreground/20'
+                      }`}
                     />
+                    {isForbiddenComment && (
+                      <p className="text-[11px] font-bold text-destructive flex items-center gap-1.5 mt-1">
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        No se permite la frase "sin observaciones" o justificantes genéricos.
+                      </p>
+                    )}
+                    {cleanComment.length > 0 && !hasMinCommentLength && !isForbiddenComment && (
+                      <p className="text-[11px] font-medium text-amber-600 dark:text-amber-400 mt-1">
+                        Se requieren al menos 100 caracteres para justificar este avance (faltan {100 - cleanComment.length}).
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>

@@ -50,6 +50,7 @@ export interface IndicatorReport {
   reported_value: number | null;
   comment: string | null;
   status: ReportStatus;
+  evaluation_status?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -89,3 +90,17 @@ export interface Attachment {
   uploaded_by: string;
   created_at: string;
 }
+
+export interface EmailSmtpSettings {
+  id: string;
+  provider: 'smtp' | 'resend';
+  sender_name: string;
+  sender_email: string;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_user: string;
+  smtp_password?: string;
+  smtp_secure: 'tls' | 'ssl' | 'none';
+  updated_at: string;
+}
+

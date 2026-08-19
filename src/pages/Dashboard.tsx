@@ -169,7 +169,7 @@ export default function Dashboard() {
                     <p className="text-xs font-bold text-foreground">{formatReportedValue(report.reported_value, report.indicators)}</p>
                     <p className="text-[10px] text-muted-foreground">Valor reportado</p>
                   </div>
-                  <StatusBadge status={report.status as any} />
+                  <StatusBadge status={report.status as any} evaluationStatus={report.evaluation_status} />
                   
                   {userRole === 'informant' && ['draft', 'observed'].includes(report.status) && (
                     <Button size="sm" onClick={() => handleOpenReport(report)} className="h-8 shadow-sm">

@@ -95,6 +95,7 @@ export type Database = {
           created_at: string
           created_by: string
           denominator: number | null
+          evaluation_status: string | null
           id: string
           indicator_id: string
           institution_id: string
@@ -114,6 +115,7 @@ export type Database = {
           created_at?: string
           created_by: string
           denominator?: number | null
+          evaluation_status?: string | null
           id?: string
           indicator_id: string
           institution_id: string
@@ -133,6 +135,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           denominator?: number | null
+          evaluation_status?: string | null
           id?: string
           indicator_id?: string
           institution_id?: string
@@ -542,6 +545,84 @@ export type Database = {
         }
         Relationships: []
       }
+      email_smtp_settings: {
+        Row: {
+          created_at?: string
+          id: string
+          provider: "smtp" | "resend"
+          sender_name: string
+          sender_email: string
+          smtp_host: string
+          smtp_port: number
+          smtp_user: string
+          smtp_password?: string | null
+          smtp_secure: "tls" | "ssl" | "none"
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          provider?: "smtp" | "resend"
+          sender_name?: string
+          sender_email?: string
+          smtp_host?: string
+          smtp_port?: number
+          smtp_user?: string
+          smtp_password?: string | null
+          smtp_secure?: "tls" | "ssl" | "none"
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          provider?: "smtp" | "resend"
+          sender_name?: string
+          sender_email?: string
+          smtp_host?: string
+          smtp_port?: number
+          smtp_user?: string
+          smtp_password?: string | null
+          smtp_secure?: "tls" | "ssl" | "none"
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      user_institutions: {
+        Row: {
+          created_at: string
+          id: string
+          institution_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          institution_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          institution_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_institutions_institution_id_fkey"
+            columns: ["institution_id"]
+            isOneToOne: false
+            referencedRelation: "institutions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_institutions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -585,7 +666,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "reviewer" | "informant"
+      app_role: "admin" | "reviewer" | "informant" | "jefatura"
     }
     CompositeTypes: {
       [_ in never]: never

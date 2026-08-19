@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, FileBarChart, ClipboardList, MessageSquare,
-  Building2, Users, Settings, Activity, LogOut, Inbox, Zap
+  Building2, Users, Settings, Activity, LogOut, Inbox, Zap, FileText
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useLocation } from 'react-router-dom';
@@ -19,6 +19,7 @@ const mainNav = [
   { title: 'Dashboard', url: '/', icon: LayoutDashboard },
   { title: 'Bandeja', url: '/inbox', icon: Inbox },
   { title: 'Reportes', url: '/reports', icon: FileBarChart },
+  { title: 'Informes de Gestión', url: '/management-reports', icon: FileText },
   { title: 'Indicadores', url: '/indicators', icon: Activity },
   { title: 'Observaciones', url: '/observations', icon: MessageSquare },
 ];

@@ -20,6 +20,7 @@ import AuthPage from "./pages/AuthPage";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
 import AdminDashboard from "./pages/AdminDashboard";
+import ManagementReportsPage from "./pages/ManagementReportsPage";
 
 const queryClient = new QueryClient();
 
@@ -33,6 +34,7 @@ function ProtectedRoutes() {
       <Route path="/" element={<Dashboard />} />
       <Route path="/inbox" element={<InboxPage />} />
       <Route path="/reports" element={<Reports />} />
+      <Route path="/management-reports" element={<ManagementReportsPage />} />
       <Route path="/reports/:id" element={<ReportDetail />} />
       <Route path="/indicators" element={<Indicators />} />
       <Route path="/institutions" element={<Institutions />} />

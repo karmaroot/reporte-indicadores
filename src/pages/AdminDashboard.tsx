@@ -77,11 +77,14 @@ function useDashboardData(userId?: string, userRole?: string | null) {
 }
 
 function getQuarterTarget(indicator: any) {
-  const month = new Date().getMonth();
-  if (month < 3) return indicator.q1_prog || 0;
-  if (month < 6) return indicator.q2_prog || 0;
-  if (month < 9) return indicator.q3_prog || 0;
-  return indicator.q4_prog || 0;
+  // Mes de reporte = mes vencido anterior a la fecha del sistema
+  const date = new Date();
+  date.setMonth(date.getMonth() - 1);
+  const month = date.getMonth();
+  if (month < 3) return Number(indicator.q1_prog ?? indicator.target_value ?? 0);
+  if (month < 6) return Number(indicator.q2_prog ?? indicator.target_value ?? 0);
+  if (month < 9) return Number(indicator.q3_prog ?? indicator.target_value ?? 0);
+  return Number(indicator.q4_prog ?? indicator.target_value ?? 0);
 }
 
 function getRealTimeProgress(indicator: any) {
@@ -288,21 +291,29 @@ export default function AdminDashboard() {
                 <CardContent className="p-8">
                   <div className="flex gap-8 overflow-x-auto pb-4 custom-scrollbar items-center">
                     {institution.instruments.map((instrument: any) => {
+                      let totalTargetCapacity = 0;
+                      let achievedCapacity = 0;
                       let totalWeight = 0;
                       let achievedWeight = 0;
 
                       instrument.indicators.forEach((ind: any) => {
                         const weight = Number(ind.weight) || 0;
                         totalWeight += weight;
-                        const target = Number(ind.target_value) || 0;
                         const quarterTarget = getQuarterTarget(ind);
                         const realTimeProgress = getRealTimeProgress(ind);
-                        if (realTimeProgress >= quarterTarget || realTimeProgress >= target) {
+                        
+                        const capacity = weight * quarterTarget;
+                        totalTargetCapacity += capacity;
+
+                        if (realTimeProgress >= quarterTarget && quarterTarget > 0) {
+                          achievedCapacity += capacity;
                           achievedWeight += weight;
                         }
                       });
 
-                      const drumPercentage = totalWeight > 0 ? (achievedWeight / totalWeight) * 100 : 0;
+                      const drumPercentage = totalTargetCapacity > 0
+                        ? Math.min(100, Math.max(0, (achievedCapacity / totalTargetCapacity) * 100))
+                        : (totalWeight > 0 ? (achievedWeight / totalWeight) * 100 : 0);
 
                       return (
                         <div key={instrument.id} className="flex flex-col items-center gap-4">
@@ -425,7 +436,7 @@ export default function AdminDashboard() {
                                 <span className="text-xs font-black uppercase tracking-wider text-muted-foreground font-mono">
                                   {report.periods?.name || report.period?.name || 'Período'}
                                 </span>
-                                <StatusBadge status={report.status} />
+                                <StatusBadge status={report.status} evaluationStatus={report.evaluation_status} />
                               </div>
 
                               <div className="grid grid-cols-2 gap-4 py-2 border-y border-muted/50">

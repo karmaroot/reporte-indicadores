@@ -1,9 +1,87 @@
+// @ts-ignore
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// @ts-ignore
+import nodemailer from "npm:nodemailer@^6.9.13";
+
+declare const Deno: any;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
+
+// Helper function to dispatch emails via Direct SMTP (Option A) or Resend fallback
+async function dispatchEmail(
+  toEmail: string,
+  subject: string,
+  htmlBody: string,
+  smtpSettings: any,
+  resendApiKey: string,
+  ccList?: string[]
+) {
+  const senderName = smtpSettings?.sender_name || "Comisión Nacional de Riego - Monitoreo AGE";
+  const senderEmail = smtpSettings?.sender_email || "comision.nacional.riego@cnr.gob.cl";
+  const provider = smtpSettings?.provider || "smtp";
+
+  // Option A: Direct SMTP connection to institutional server
+  if (provider === "smtp" && smtpSettings?.smtp_host) {
+    const isSecurePort = smtpSettings.smtp_secure === "ssl" || smtpSettings.smtp_port === 465;
+
+    const transporter = nodemailer.createTransport({
+      host: smtpSettings.smtp_host,
+      port: Number(smtpSettings.smtp_port) || 587,
+      secure: isSecurePort,
+      auth: smtpSettings.smtp_user ? {
+        user: smtpSettings.smtp_user,
+        pass: smtpSettings.smtp_password || ""
+      } : undefined,
+      tls: {
+        rejectUnauthorized: false
+      }
+    });
+
+    const mailOptions: Record<string, any> = {
+      from: `"${senderName}" <${senderEmail}>`,
+      to: toEmail,
+      subject: subject,
+      html: htmlBody
+    };
+
+    if (ccList && ccList.length > 0) {
+      mailOptions.cc = ccList;
+    }
+
+    const info = await transporter.sendMail(mailOptions);
+    return { success: true, mode: "smtp", info };
+  } 
+
+  // Option B/Fallback: Resend API Sandbox
+  const emailPayload: Record<string, any> = {
+    from: "Monitoreo AGE <onboarding@resend.dev>",
+    to: [toEmail],
+    subject: subject,
+    html: htmlBody
+  };
+
+  if (ccList && ccList.length > 0) {
+    emailPayload.cc = ccList;
+  }
+
+  const resendRes = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${resendApiKey}`
+    },
+    body: JSON.stringify(emailPayload)
+  });
+
+  const resendData = await resendRes.json();
+  if (!resendRes.ok) {
+    throw new Error(resendData.message || JSON.stringify(resendData));
+  }
+  return { success: true, mode: "resend", info: resendData };
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -22,14 +100,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const bodyJson = await req.json();
-    const { report_id, period_id, status, event_type, old_status } = bodyJson;
-
-    // Prevent redundant triggers if status did not change
-    if (event_type !== "period_started" && old_status && old_status === status) {
-      return new Response(JSON.stringify({ message: "No status change" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
-    }
+    const { report_id, period_id, status, event_type, old_status, is_test, action, target_email } = bodyJson;
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -41,19 +112,133 @@ Deno.serve(async (req: Request) => {
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
-    // Fetch the Resend API Key from the database secrets table
-    const { data: secretData, error: secretError } = await adminClient
+    // Fetch the SMTP settings configuration from database
+    const { data: smtpSettings } = await adminClient
+      .from("email_smtp_settings")
+      .select("*")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const senderName = smtpSettings?.sender_name || "Comisión Nacional de Riego - Monitoreo AGE";
+    const senderEmail = smtpSettings?.sender_email || "comision.nacional.riego@cnr.gob.cl";
+
+    // Fetch the Resend API Key from database secrets table
+    const { data: secretData } = await adminClient
       .from("email_notification_secrets")
       .select("key_value")
       .eq("key_name", "RESEND_API_KEY")
-      .single();
+      .maybeSingle();
 
-    if (secretError || !secretData) {
-      throw new Error(`Resend API Key not found in database: ${secretError?.message}`);
+    const resendApiKey = secretData?.key_value || "";
+
+    // Common premium email wrapper
+    const wrapEmailHtml = (emailBody: string, isTestBanner: boolean = false) => `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: sans-serif; background-color: #f8fafc; color: #1e293b; padding: 20px; }
+          .card { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+          .header { background: #0f172a; padding: 24px; text-align: center; color: #ffffff; }
+          .test-badge { background: #f59e0b; color: #ffffff; font-weight: bold; font-size: 11px; text-transform: uppercase; padding: 4px 10px; border-radius: 999px; display: inline-block; margin-bottom: 8px; }
+          .content { padding: 24px; }
+          .text-content { line-height: 1.6; margin-bottom: 24px; white-space: pre-line; }
+          .btn { display: inline-block; background: #2563eb; color: #ffffff !important; text-decoration: none; padding: 12px 24px; font-weight: bold; border-radius: 6px; font-size: 14px; }
+          .footer { background: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="header">
+            ${isTestBanner ? '<div class="test-badge">Prueba de Envío Directo (Opción A)</div>' : ''}
+            <h2 style="margin:0;">${senderName}</h2>
+          </div>
+          <div class="content">
+            <div class="text-content">${emailBody}</div>
+            <div style="text-align: center;">
+              <a href="https://gauge-wise-flows.pages.dev" class="btn">Ir al Portal</a>
+            </div>
+          </div>
+          <div class="footer">
+            Enviado desde: ${senderEmail}
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    // 2. Handle TEST EMAIL Mode
+    if (is_test || action === "test_email") {
+      const recipientEmail = target_email || bodyJson.to || "dafne.loyola@cnr.gob.cl";
+      const testEventType = event_type || "period_started";
+
+      const { data: testConfig } = await adminClient
+        .from("email_notification_settings")
+        .select("*")
+        .eq("event_type", testEventType)
+        .maybeSingle();
+
+      let subject = testConfig?.subject_template || "[Nuevo Periodo] Inicio de reportabilidad para: {{period_name}}";
+      let body = testConfig?.body_template || "Estimado/a {{recipient_name}},\n\nLe informamos que ha iniciado el periodo de reportabilidad para {{period_name}}.\n\nPor favor, recuerde ingresar o revisar los avances correspondientes.\n\nAtentamente,\n{{sender_name}}";
+
+      const placeholders: Record<string, string> = {
+        "{{recipient_name}}": bodyJson.recipient_name || "Usuario de Prueba",
+        "{{indicator_name}}": "Indicador de Prueba (Eficiencia hídrica)",
+        "{{instrument_name}}": "Programa de Riego 2026",
+        "{{period_name}}": bodyJson.period_name || "Primer Semestre 2026",
+        "{{reported_value}}": "85%",
+        "{{comments}}": "Este es un correo de prueba de conectividad y formato de alerta enviado desde el Portal de Indicadores AGE.",
+        "{{reviewer_name}}": "Revisor de Prueba",
+        "{{informant_name}}": "Informante de Prueba",
+        "{{sender_name}}": senderName
+      };
+
+      for (const [key, value] of Object.entries(placeholders)) {
+        subject = subject.replaceAll(key, value);
+        body = body.replaceAll(key, value);
+      }
+
+      subject = `[PRUEBA SISTEMA] ${subject}`;
+
+      try {
+        const dispatchResult = await dispatchEmail(
+          recipientEmail,
+          subject,
+          wrapEmailHtml(body, true),
+          smtpSettings,
+          resendApiKey
+        );
+
+        return new Response(JSON.stringify({ 
+          success: true, 
+          message: `Correo de prueba enviado correctamente vía ${dispatchResult.mode.toUpperCase()} a ${recipientEmail}`,
+          details: dispatchResult.info 
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      } catch (dispatchErr: any) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: dispatchErr.message || "Error al conectar con el servidor SMTP",
+          details: dispatchErr 
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
     }
-    const resendApiKey = secretData.key_value;
 
-    // 2. Fetch the dynamic email configuration set by the administrator
+    // Prevent redundant triggers if status did not change
+    if (event_type !== "period_started" && old_status && old_status === status) {
+      return new Response(JSON.stringify({ message: "No status change" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    // 3. Fetch the dynamic email configuration set by the administrator
     const { data: config, error: configError } = await adminClient
       .from("email_notification_settings")
       .select("*")
@@ -74,53 +259,18 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Common premium email wrapper
-    const wrapEmailHtml = (emailBody: string) => `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <style>
-          body { font-family: sans-serif; background-color: #f8fafc; color: #1e293b; padding: 20px; }
-          .card { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-          .header { background: #0f172a; padding: 24px; text-align: center; color: #ffffff; }
-          .content { padding: 24px; }
-          .text-content { line-height: 1.6; margin-bottom: 24px; white-space: pre-line; }
-          .btn { display: inline-block; background: #2563eb; color: #ffffff !important; text-decoration: none; padding: 12px 24px; font-weight: bold; border-radius: 6px; font-size: 14px; }
-        </style>
-      </head>
-      <body>
-        <div class="card">
-          <div class="header"><h2>Plataforma de Indicadores AGE</h2></div>
-          <div class="content">
-            <div class="text-content">${emailBody}</div>
-            <div style="text-align: center;">
-              <a href="https://gauge-wise-flows.pages.dev" class="btn">Ir al Portal</a>
-            </div>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
-
-    // 3. Handle Period Started Event
+    // 4. Handle Period Started Event
     if (event_type === "period_started") {
-      if (!period_id) {
-        throw new Error("Missing period_id for period_started event");
+      let periodName = "Período Asignado";
+      if (period_id && period_id !== "00000000-0000-0000-0000-000000000000") {
+        const { data: period } = await adminClient
+          .from("periods")
+          .select("name")
+          .eq("id", period_id)
+          .single();
+        if (period?.name) periodName = period.name;
       }
 
-      // Fetch the period name
-      const { data: period, error: periodError } = await adminClient
-        .from("periods")
-        .select("name")
-        .eq("id", period_id)
-        .single();
-
-      if (periodError || !period) {
-        throw new Error(`Period not found: ${periodError?.message}`);
-      }
-
-      // Fetch active assignments
       const { data: assignments, error: assignError } = await adminClient
         .from("instrument_indicators")
         .select(`
@@ -133,7 +283,6 @@ Deno.serve(async (req: Request) => {
         throw new Error(`Failed to fetch active assignments: ${assignError.message}`);
       }
 
-      // Filter and de-duplicate emails
       const uniqueRecipients = new Map<string, { name: string; role: string }>();
       const activeInformantInstIds = new Set<string>();
 
@@ -151,13 +300,11 @@ Deno.serve(async (req: Request) => {
             role: "reviewer"
           });
         }
-        // Save the informant's institution_id if we need to notify jefatura
         if (config.notify_roles.includes("jefatura") && rowTyped.informant?.institution_id) {
           activeInformantInstIds.add(rowTyped.informant.institution_id);
         }
       }
 
-      // If jefatura is requested, fetch jefaturas for the relevant institution_ids
       if (config.notify_roles.includes("jefatura") && activeInformantInstIds.size > 0) {
         const { data: userInsts, error: jefError } = await adminClient
           .from("user_institutions")
@@ -165,7 +312,7 @@ Deno.serve(async (req: Request) => {
           .in("institution_id", Array.from(activeInformantInstIds));
 
         if (!jefError && userInsts && userInsts.length > 0) {
-          const userIds = userInsts.map(ui => ui.user_id);
+          const userIds = userInsts.map((ui: any) => ui.user_id);
           const { data: jefaturas, error: profError } = await adminClient
             .from("profiles")
             .select("name", "email")
@@ -193,10 +340,10 @@ Deno.serve(async (req: Request) => {
       }
 
       const placeholders: Record<string, string> = {
-        "{{recipient_name}}": "", // Replaced per user
+        "{{recipient_name}}": "",
         "{{indicator_name}}": "Todos los indicadores asignados",
         "{{instrument_name}}": "Todos los instrumentos asignados",
-        "{{period_name}}": period.name,
+        "{{period_name}}": periodName,
         "{{reported_value}}": "N/A",
         "{{comments}}": "N/A",
         "{{reviewer_name}}": "N/A",
@@ -219,32 +366,15 @@ Deno.serve(async (req: Request) => {
           body = body.replaceAll(key, value);
         }
 
-        const emailPayload: Record<string, any> = {
-          from: "Monitoreo AGE <onboarding@resend.dev>",
-          to: [email],
-          subject: subject,
-          html: wrapEmailHtml(body)
-        };
-
-        if (config.custom_cc && config.custom_cc.length > 0) {
-          emailPayload.cc = config.custom_cc;
-        }
-
         emailPromises.push(
-          fetch("https://api.resend.com/emails", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${resendApiKey}`
-            },
-            body: JSON.stringify(emailPayload)
-          }).then(async res => {
-            const data = await res.json();
-            if (!res.ok) {
-              throw new Error(`Resend error for ${email}: ${JSON.stringify(data)}`);
-            }
-            return { email, data };
-          })
+          dispatchEmail(
+            email,
+            subject,
+            wrapEmailHtml(body),
+            smtpSettings,
+            resendApiKey,
+            config.custom_cc
+          )
         );
       }
 
@@ -255,7 +385,6 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 4. Handle Report Events (submitted, returned, approved)
     if (!report_id) {
       throw new Error("Missing report_id for report notification event");
     }
@@ -307,7 +436,6 @@ Deno.serve(async (req: Request) => {
     const reviewer = (instInd as any).reviewer;
     const instrumentName = (instInd as any).instrument.name;
 
-    // Fetch Jefaturas for the informant's responsibility center
     let jefaturaEmails: { name: string; email: string }[] = [];
     if (config.notify_roles.includes("jefatura") && informant?.institution_id) {
       const { data: userInsts, error: jefError } = await adminClient
@@ -316,7 +444,7 @@ Deno.serve(async (req: Request) => {
         .eq("institution_id", informant.institution_id);
 
       if (!jefError && userInsts && userInsts.length > 0) {
-        const userIds = userInsts.map(ui => ui.user_id);
+        const userIds = userInsts.map((ui: any) => ui.user_id);
         const { data: jefaturas, error: profError } = await adminClient
           .from("profiles")
           .select("name", "email")
@@ -324,7 +452,7 @@ Deno.serve(async (req: Request) => {
           .in("id", userIds);
 
         if (!profError && jefaturas) {
-          jefaturaEmails = jefaturas.filter(j => j.email) as { name: string; email: string }[];
+          jefaturaEmails = jefaturas.filter((j: any) => j.email) as { name: string; email: string }[];
         }
       }
     }
@@ -360,7 +488,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const placeholders: Record<string, string> = {
-      "{{recipient_name}}": "", // Replaced per user
+      "{{recipient_name}}": "",
       "{{indicator_name}}": (report as any).indicators.name,
       "{{instrument_name}}": instrumentName,
       "{{period_name}}": (report as any).periods.name,
@@ -386,32 +514,15 @@ Deno.serve(async (req: Request) => {
         body = body.replaceAll(key, value);
       }
 
-      const emailPayload: Record<string, any> = {
-        from: "Monitoreo AGE <onboarding@resend.dev>",
-        to: [email],
-        subject: subject,
-        html: wrapEmailHtml(body)
-      };
-
-      if (config.custom_cc && config.custom_cc.length > 0) {
-        emailPayload.cc = config.custom_cc;
-      }
-
       emailPromises.push(
-        fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${resendApiKey}`
-          },
-          body: JSON.stringify(emailPayload)
-        }).then(async res => {
-          const data = await res.json();
-          if (!res.ok) {
-            throw new Error(`Resend error for ${email}: ${JSON.stringify(data)}`);
-          }
-          return { email, data };
-        })
+        dispatchEmail(
+          email,
+          subject,
+          wrapEmailHtml(body),
+          smtpSettings,
+          resendApiKey,
+          config.custom_cc
+        )
       );
     }
 
