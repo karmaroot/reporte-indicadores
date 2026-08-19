@@ -27,7 +27,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useUpdateProfile } from '@/hooks/useSupabaseMutations';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Save, Lock, Mail, User, ShieldAlert, Loader2, Sparkles, Server, Send, CheckCircle2, AlertTriangle, KeyRound } from 'lucide-react';
+import { Save, Lock, Mail, User, ShieldAlert, Loader2, Sparkles, Server, Send, CheckCircle2, AlertTriangle, KeyRound, ListChecks, RefreshCw, Clock, CheckCircle, XCircle, RotateCcw } from 'lucide-react';
 import { ROLE_LABELS } from '@/lib/constants';
 
 const PLACEHOLDERS = [
@@ -69,6 +69,10 @@ export default function SettingsPage() {
   const [savingSmtp, setSavingSmtp] = useState(false);
   const [loadingSmtp, setLoadingSmtp] = useState(false);
 
+  // Email Queue (Puente) state
+  const [queueItems, setQueueItems] = useState<any[]>([]);
+  const [loadingQueue, setLoadingQueue] = useState(false);
+
   // Test Email Modal state
   const [isTestDialogOpen, setIsTestDialogOpen] = useState(false);
   const [testTargetEmail, setTestTargetEmail] = useState('dafne.loyola@cnr.gob.cl');
@@ -76,6 +80,39 @@ export default function SettingsPage() {
   const [testPeriodName, setTestPeriodName] = useState('Primer Semestre 2026');
   const [sendingTest, setSendingTest] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string; error?: string } | null>(null);
+
+  // Fetch email queue items
+  const fetchQueue = async () => {
+    if (userRole !== 'admin') return;
+    setLoadingQueue(true);
+    try {
+      const { data, error } = await supabase
+        .from('email_queue')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      setQueueItems(data || []);
+    } catch (err: any) {
+      console.error('Error al cargar cola de correos:', err.message);
+    } finally {
+      setLoadingQueue(false);
+    }
+  };
+
+  const handleRequeue = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('email_queue')
+        .update({ status: 'pending', attempts: 0, error_message: null })
+        .eq('id', id);
+      if (error) throw error;
+      toast.success('Correo vuelto a poner en cola de procesamiento');
+      fetchQueue();
+    } catch (err: any) {
+      toast.error('Error al reenviar a la cola: ' + err.message);
+    }
+  };
 
   const handleNameSave = () => {
     if (!profile) return;
@@ -157,6 +194,18 @@ export default function SettingsPage() {
     if (userRole === 'admin') {
       fetchConfigs();
       fetchSmtpSettings();
+      fetchQueue();
+
+      const channel = supabase
+        .channel('email_queue_realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'email_queue' }, () => {
+          fetchQueue();
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [userRole]);
 
@@ -279,48 +328,73 @@ export default function SettingsPage() {
     setTestResult(null);
 
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://ewwzmcsxfugqfujvbyxo.supabase.co';
-      const response = await fetch(`${supabaseUrl}/functions/v1/send-notification`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer secret_email_alert_webhook_token_2026'
-        },
-        body: JSON.stringify({
-          is_test: true,
-          action: 'test_email',
-          target_email: testTargetEmail,
+      const subject = `[PRUEBA PUENTE] Alerta de prueba de envío - ${testPeriodName}`;
+      const bodyHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8">
+        <style>
+          body { font-family: Segoe UI, sans-serif; background-color: #f8fafc; color: #1e293b; padding: 20px; }
+          .card { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+          .header { background: #0f172a; padding: 24px; text-align: center; color: #ffffff; }
+          .test-badge { background: #0284c7; color: #ffffff; font-weight: bold; font-size: 11px; text-transform: uppercase; padding: 4px 10px; border-radius: 999px; display: inline-block; margin-bottom: 8px; }
+          .content { padding: 24px; }
+          .text-content { line-height: 1.6; margin-bottom: 24px; }
+          .footer { background: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; }
+        </style>
+        </head>
+        <body>
+          <div class="card">
+            <div class="header">
+              <div class="test-badge">Prueba de Envío por Servicio Puente (NTBK-Msilva)</div>
+              <h2 style="margin:0;">Comisión Nacional de Riego</h2>
+            </div>
+            <div class="content">
+              <div class="text-content">
+                <p>Estimado/a usuario/a,</p>
+                <p>Esta es una confirmación de prueba de envío de notificación procesada exitosamente a través del <strong>Servicio Puente Institucional (NTBK-Msilva.cnr.gob.cl)</strong>.</p>
+                <p><strong>Detalles de la prueba:</strong></p>
+                <ul>
+                  <li><strong>Destinatario:</strong> ${testTargetEmail}</li>
+                  <li><strong>Evento:</strong> ${testEventType}</li>
+                  <li><strong>Período:</strong> ${testPeriodName}</li>
+                  <li><strong>Fecha y Hora:</strong> ${new Date().toLocaleString('es-CL')}</li>
+                </ul>
+                <p>El servicio de alertas está funcionando correctamente.</p>
+              </div>
+            </div>
+            <div class="footer">Sistema de Monitoreo de Indicadores AGE - CNR</div>
+          </div>
+        </body>
+        </html>`;
+
+      const { data, error } = await supabase
+        .from('email_queue')
+        .insert({
           event_type: testEventType,
-          period_name: testPeriodName,
-          period_id: '00000000-0000-0000-0000-000000000000',
-          report_id: '00000000-0000-0000-0000-000000000000'
+          recipient_email: testTargetEmail,
+          subject: subject,
+          body_html: bodyHtml,
+          status: 'pending'
         })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setTestResult({
+        success: true,
+        message: `Correo de prueba encolado exitosamente (ID: ${data.id.substring(0, 8)}...). El Servicio Puente (NTBK-Msilva.cnr.gob.cl) lo procesará y enviará a ${testTargetEmail} en segundos.`
       });
-
-      const result = await response.json();
-
-      if (!response.ok || result.success === false) {
-        const errorMsg = result.error || result.message || 'Error al procesar la solicitud de envío';
-        setTestResult({
-          success: false,
-          message: 'Error en la prueba de envío',
-          error: errorMsg
-        });
-        toast.error('Prueba rechazada: ' + errorMsg);
-      } else {
-        setTestResult({
-          success: true,
-          message: result.message || `Correo de prueba enviado exitosamente a ${testTargetEmail}`
-        });
-        toast.success(`Correo enviado a ${testTargetEmail}`);
-      }
+      toast.success(`Prueba encolada para el servicio puente (${testTargetEmail})`);
+      fetchQueue();
     } catch (err: any) {
       setTestResult({
         success: false,
-        message: 'Error de conexión con el servicio de alertas',
+        message: 'Error al encolar la prueba de correo',
         error: err.message
       });
-      toast.error('Error al ejecutar la prueba: ' + err.message);
+      toast.error('Error en la prueba: ' + err.message);
     } finally {
       setSendingTest(false);
     }
@@ -333,16 +407,22 @@ export default function SettingsPage() {
       <PageHeader title="Configuración" description="Configuración de tu cuenta y del sistema" />
 
       <Tabs defaultValue="account" className="w-full">
-        <TabsList className={`mb-6 grid w-full ${isAdmin ? 'grid-cols-2 max-w-md' : 'grid-cols-1 max-w-xs'}`}>
+        <TabsList className={`mb-6 grid w-full ${isAdmin ? 'grid-cols-3 max-w-xl' : 'grid-cols-1 max-w-xs'}`}>
           <TabsTrigger value="account" className="flex items-center gap-2">
             <User className="h-4 w-4" />
             Mi Cuenta
           </TabsTrigger>
           {isAdmin && (
-            <TabsTrigger value="notifications" className="flex items-center gap-2">
-              <Mail className="h-4 w-4" />
-              Alertas por Correo
-            </TabsTrigger>
+            <>
+              <TabsTrigger value="notifications" className="flex items-center gap-2">
+                <Mail className="h-4 w-4" />
+                Alertas por Correo
+              </TabsTrigger>
+              <TabsTrigger value="queue" className="flex items-center gap-2">
+                <ListChecks className="h-4 w-4" />
+                Cola Notificaciones (Puente)
+              </TabsTrigger>
+            </>
           )}
         </TabsList>
 
@@ -761,6 +841,144 @@ export default function SettingsPage() {
                   </div>
                 </div>
               )}
+            </div>
+          </TabsContent>
+        )}
+
+        {/* Tab Notification Queue (Admin Only) */}
+        {isAdmin && (
+          <TabsContent value="queue" className="space-y-6">
+            <div className="bg-card border rounded-2xl shadow-card p-6 space-y-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-primary/10 rounded-xl text-primary shrink-0">
+                    <ListChecks className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-foreground leading-none">
+                      Cola de Notificaciones y Estado del Servicio Puente
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Monitoreo en tiempo real de los correos procesados por el servicio puente en <span className="font-semibold text-foreground">NTBK-Msilva.cnr.gob.cl</span>.
+                    </p>
+                  </div>
+                </div>
+
+                <Button onClick={fetchQueue} disabled={loadingQueue} variant="outline" size="sm" className="shrink-0">
+                  <RefreshCw className={`h-4 w-4 mr-2 ${loadingQueue ? 'animate-spin' : ''}`} />
+                  Actualizar Cola
+                </Button>
+              </div>
+
+              {/* Stat summary cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-amber-900 dark:text-amber-300 uppercase tracking-wider">Pendientes</p>
+                    <p className="text-2xl font-extrabold text-amber-700 dark:text-amber-400 mt-1">
+                      {queueItems.filter(i => i.status === 'pending' || i.status === 'processing').length}
+                    </p>
+                  </div>
+                  <Clock className="h-8 w-8 text-amber-500 opacity-60" />
+                </div>
+
+                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-emerald-900 dark:text-emerald-300 uppercase tracking-wider">Enviados (OK)</p>
+                    <p className="text-2xl font-extrabold text-emerald-700 dark:text-emerald-400 mt-1">
+                      {queueItems.filter(i => i.status === 'sent').length}
+                    </p>
+                  </div>
+                  <CheckCircle className="h-8 w-8 text-emerald-500 opacity-60" />
+                </div>
+
+                <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-rose-900 dark:text-rose-300 uppercase tracking-wider">Fallidos</p>
+                    <p className="text-2xl font-extrabold text-rose-700 dark:text-rose-400 mt-1">
+                      {queueItems.filter(i => i.status === 'failed').length}
+                    </p>
+                  </div>
+                  <XCircle className="h-8 w-8 text-rose-500 opacity-60" />
+                </div>
+              </div>
+
+              {/* Data Table */}
+              <div className="border rounded-xl overflow-hidden bg-background">
+                {loadingQueue ? (
+                  <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
+                    <Loader2 className="animate-spin h-5 w-5 text-primary" />
+                    <span className="text-xs font-semibold">Cargando cola de notificaciones...</span>
+                  </div>
+                ) : queueItems.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground space-y-1">
+                    <ListChecks className="h-8 w-8 mx-auto opacity-40 mb-2" />
+                    <p className="text-xs font-semibold text-foreground">No hay correos en la cola</p>
+                    <p className="text-[11px]">Los correos generados por eventos de reportes o inicios de periodo aparecerán aquí.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-muted/50 text-muted-foreground uppercase text-[10px] font-bold border-b">
+                        <tr>
+                          <th className="px-4 py-3">Estado</th>
+                          <th className="px-4 py-3">Destinatario</th>
+                          <th className="px-4 py-3">Asunto</th>
+                          <th className="px-4 py-3">Evento</th>
+                          <th className="px-4 py-3">Fecha Creación</th>
+                          <th className="px-4 py-3 text-right">Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {queueItems.map((item) => (
+                          <tr key={item.id} className="hover:bg-muted/20 transition-all">
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              {item.status === 'sent' && (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                                  <CheckCircle className="h-3 w-3" />
+                                  Enviado
+                                </span>
+                              )}
+                              {(item.status === 'pending' || item.status === 'processing') && (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20">
+                                  <Clock className="h-3 w-3 animate-pulse" />
+                                  {item.status === 'processing' ? 'Procesando...' : 'Pendiente'}
+                                </span>
+                              )}
+                              {item.status === 'failed' && (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-600 border border-rose-500/20" title={item.error_message}>
+                                  <XCircle className="h-3 w-3" />
+                                  Fallido
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 font-semibold text-foreground whitespace-nowrap">
+                              {item.recipient_email}
+                            </td>
+                            <td className="px-4 py-3 text-muted-foreground truncate max-w-xs">
+                              {item.subject}
+                            </td>
+                            <td className="px-4 py-3 text-muted-foreground whitespace-nowrap font-mono text-[10px]">
+                              {item.event_type}
+                            </td>
+                            <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                              {new Date(item.created_at).toLocaleString('es-CL')}
+                            </td>
+                            <td className="px-4 py-3 text-right whitespace-nowrap">
+                              {(item.status === 'failed' || item.status === 'pending') && (
+                                <Button onClick={() => handleRequeue(item.id)} variant="ghost" size="sm" className="h-7 text-xs text-primary hover:bg-primary/10">
+                                  <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                                  Reencolar
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           </TabsContent>
         )}

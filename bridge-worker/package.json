@@ -1,0 +1,14 @@
+{
+  "name": "cnr-email-bridge-worker",
+  "version": "1.0.0",
+  "description": "Servicio Puente de Envió de Correos Institucionales CNR para Indicadores AGE",
+  "main": "worker.js",
+  "type": "module",
+  "scripts": {
+    "start": "node worker.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.99.2",
+    "nodemailer": "^6.9.13"
+  }
+}
