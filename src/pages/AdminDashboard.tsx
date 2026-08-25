@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
 import { useAuth } from '@/hooks/useAuth';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { isTimeReductionUnit, isIndicatorTargetFulfilled } from '@/lib/utils';
 
 function useDashboardData(userId?: string, userRole?: string | null) {
   return useQuery({
@@ -167,10 +168,16 @@ const IndicatorBar = ({
   const quarterTarget = getQuarterTarget(indicator);
   const realTime = getRealTimeProgress(indicator);
   const weight = Number(indicator.weight) || 0;
-  const isFulfilled = realTime >= quarterTarget || realTime >= target;
+  const isFulfilled = isIndicatorTargetFulfilled(realTime, quarterTarget, indicator.unit) ||
+                      isIndicatorTargetFulfilled(realTime, target, indicator.unit);
   
   const unitLower = indicator.unit?.toLowerCase().trim() || '';
-  const advanceColor = realTime === 0 ? '#ef4444' : (realTime < quarterTarget ? '#fbbf24' : '#10b981');
+  const isTimeRed = isTimeReductionUnit(indicator.unit);
+  const advanceColor = realTime === 0 
+    ? '#ef4444' 
+    : (isTimeRed 
+        ? (realTime <= quarterTarget ? '#10b981' : '#fbbf24')
+        : (realTime < quarterTarget ? '#fbbf24' : '#10b981'));
 
   const chartData = [
     { name: 'Meta', value: target, color: 'hsl(var(--muted-foreground))' },

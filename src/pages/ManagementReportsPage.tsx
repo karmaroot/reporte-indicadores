@@ -9,7 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Download, Printer, FileText, CheckCircle2, AlertTriangle, AlertCircle, FileSpreadsheet, Building2, Filter, Layers, BarChart3, PieChart as PieIcon, RefreshCw, ChevronRight } from 'lucide-react';
+import { Loader2, Download, Printer, FileText, CheckCircle2, AlertTriangle, AlertCircle, FileSpreadsheet, Building2, Filter, Layers, BarChart3, PieChart as PieIcon, RefreshCw, ChevronRight, Tv, Maximize2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, Cell, CartesianGrid, PieChart, Pie, Legend } from 'recharts';
 import { useAuth } from '@/hooks/useAuth';
 import { BRANDING } from '@/config/branding';
@@ -17,6 +17,8 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { CNR_OFFICIAL_LOGO_BASE64 } from '@/assets/cnr-official-logo-base64';
+import { calculateIndicatorProgress } from '@/lib/utils';
+import { ReportPresentationModal } from '@/components/reports/ReportPresentationModal';
 
 // Custom hook to fetch report data
 function useManagementReportData(institutionIdFilter?: string) {
@@ -94,7 +96,7 @@ function useManagementReportData(institutionIdFilter?: string) {
             latestReport = validReports[0];
             const target = Number(ind.target_value) || 100;
             const repVal = Number(latestReport.reported_value) || 0;
-            progress = Math.min(Math.round((repVal / target) * 100), 100);
+            progress = calculateIndicatorProgress(repVal, target, ind.unit);
           }
 
           // Evaluate risk status
@@ -141,6 +143,7 @@ export default function ManagementReportsPage() {
   const { profile } = useAuth();
   const [institutionFilter, setInstitutionFilter] = useState<string>('all');
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [isPresentationOpen, setIsPresentationOpen] = useState(false);
 
   // Modular sections selection model (6 user-chosen variables)
   const [includeIntro, setIncludeIntro] = useState(true);
@@ -434,6 +437,16 @@ export default function ManagementReportsPage() {
                 </Button>
 
                 <Button
+                  onClick={() => setIsPresentationOpen(true)}
+                  variant="secondary"
+                  className="w-full text-xs font-extrabold bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-500/30 shadow-sm"
+                  size="sm"
+                >
+                  <Tv className="h-4 w-4 mr-2 text-sky-500" />
+                  Modo Presentación (Pantalla Completa)
+                </Button>
+
+                <Button
                   onClick={handlePrintView}
                   variant="outline"
                   className="w-full text-xs font-semibold"
@@ -458,7 +471,19 @@ export default function ManagementReportsPage() {
         </div>
 
         {/* Right Column: Live Printable Document Preview (Isolated Container with Fixed A4 Bounds) */}
-        <div className="lg:col-span-8 overflow-x-auto">
+        <div className="lg:col-span-8 overflow-x-auto space-y-3">
+          <div className="flex justify-end print-hide">
+            <Button
+              onClick={() => setIsPresentationOpen(true)}
+              variant="outline"
+              size="sm"
+              className="text-xs font-bold text-sky-600 border-sky-600/30 hover:bg-sky-50 dark:hover:bg-sky-950/40 shadow-sm"
+            >
+              <Maximize2 className="h-3.5 w-3.5 mr-1.5" />
+              Ver a Pantalla Completa (Modo Presentación)
+            </Button>
+          </div>
+
           <div
             id="report-document-container"
             ref={printRef}
@@ -783,9 +808,34 @@ export default function ManagementReportsPage() {
                 )}
               </div>
             )}
-          </div>
         </div>
       </div>
+
+      {/* Fullscreen Presentation Mode Modal */}
+      <ReportPresentationModal
+        open={isPresentationOpen}
+        onClose={() => setIsPresentationOpen(false)}
+        data={data}
+        selectedInstitutionName={selectedInstitutionName}
+        profileName={profile?.name || 'Administrador'}
+        introText={introText}
+        conclusionText={conclusionText}
+        toggles={{
+          includeIntro,
+          includeRiskList,
+          includeRiskChart,
+          includeAllInstruments,
+          includeComplianceChart,
+          includeConclusion,
+        }}
+        riskIndicators={riskIndicators}
+        countNormal={countNormal}
+        countProg={countProg}
+        countRisk={countRisk}
+        countNoReport={countNoReport}
+        riskPieData={riskPieData}
+        instrumentComplianceData={instrumentComplianceData}
+      />
     </AppLayout>
   );
 }

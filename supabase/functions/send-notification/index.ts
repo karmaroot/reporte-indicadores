@@ -192,6 +192,7 @@ Deno.serve(async (req: Request) => {
         "{{comments}}": "Este es un correo de prueba de conectividad y formato de alerta enviado desde el Portal de Indicadores AGE.",
         "{{reviewer_name}}": "Revisor de Prueba",
         "{{informant_name}}": "Informante de Prueba",
+        "{{decision_reporte}}": bodyJson.decision_reporte || "Bajo lo Programado",
         "{{sender_name}}": senderName
       };
 
@@ -398,6 +399,7 @@ Deno.serve(async (req: Request) => {
         denominator,
         comment,
         status,
+        evaluation_status,
         indicator_id,
         indicators (
           name,
@@ -487,6 +489,18 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    const EVALUATION_LABELS: Record<string, string> = {
+      avance_normal: "Avance Normal",
+      bajo_programado: "Bajo lo Programado",
+      en_riesgo: "En riesgo de cumplimiento",
+      inconsistente: "Inconsistente",
+      incompleto: "Incompleto",
+      sin_reporte: "Sin reporte"
+    };
+
+    const evalStatus = (report as any).evaluation_status;
+    const decisionReporteLabel = evalStatus ? (EVALUATION_LABELS[evalStatus] || evalStatus) : "N/A";
+
     const placeholders: Record<string, string> = {
       "{{recipient_name}}": "",
       "{{indicator_name}}": (report as any).indicators.name,
@@ -495,7 +509,8 @@ Deno.serve(async (req: Request) => {
       "{{reported_value}}": `${report.reported_value} ${(report as any).indicators.unit || ""}`,
       "{{comments}}": report.comment || "Sin comentarios adicionales",
       "{{reviewer_name}}": reviewer?.name || "Revisor Asignado",
-      "{{informant_name}}": informant?.name || "Informante Asignado"
+      "{{informant_name}}": informant?.name || "Informante Asignado",
+      "{{decision_reporte}}": decisionReporteLabel
     };
 
     const emailPromises = [];

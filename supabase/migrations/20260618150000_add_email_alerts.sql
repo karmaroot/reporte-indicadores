@@ -32,7 +32,9 @@ VALUES
 ('period_started', 'Inicio Periodo de Reportabilidad Indicadores', 'Se envía a los informantes, revisores y jefaturas al dar inicio a un nuevo período de reportabilidad.', '[Nuevo Periodo] Inicio de reportabilidad para: {{period_name}}', 'Estimado/a {{recipient_name}},\n\nLe informamos que ha iniciado el periodo de reportabilidad para {{period_name}}.\n\nPor favor, recuerde ingresar o revisar los avances correspondientes.', ARRAY['informant', 'reviewer']),
 ('report_submitted', 'Reporte Enviado para Revisión', 'Se envía al revisor asignado cuando el informante sube un avance.', '[Revisión Pendiente] Nuevo reporte enviado: {{indicator_name}}', 'El informante {{informant_name}} ha reportado un avance para el indicador {{indicator_name}} del instrumento {{instrument_name}} durante el período {{period_name}}.', ARRAY['reviewer']),
 ('report_returned', 'Reporte Devuelto con Observaciones', 'Se envía al informante cuando el revisor solicita correcciones.', '[Observación / Devolución] Reporte devuelto: {{indicator_name}}', 'El revisor {{reviewer_name}} ha devuelto el reporte con observaciones para el indicador {{indicator_name}}.', ARRAY['informant']),
-('report_approved', 'Reporte Aprobado / Cumplido', 'Se envía al informante cuando el revisor valida el avance.', '[Aprobado] Reporte validado: {{indicator_name}}', 'Excelente. El avance para el indicador {{indicator_name}} ha sido aprobado.', ARRAY['informant'])
+('report_approved', 'Reporte Revisado Sin Observaciones', 'Se envía al informante cuando el revisor valida el avance.', '[Aprobado] Reporte validado: {{indicator_name}}', 'Excelente. El avance para el indicador {{indicator_name}} ha sido aprobado.', ARRAY['informant']),
+('report_responded', 'Informante responde observaciones', 'Se envía al revisor cuando el informante responde a las observaciones enviadas por el revisor.', '[Respuesta a Observaciones] El informante ha respondido: {{indicator_name}}', 'Estimado/a {{recipient_name}},\n\nEl informante {{informant_name}} ha respondido a las observaciones del indicador {{indicator_name}} para el período {{period_name}}.\n\nComentario del informante:\n"{{comments}}"\n\nPor favor ingrese al portal para revisar el avance.', ARRAY['reviewer']),
+('report_reviewed_with_obs', 'Reporte revisado con observaciones', 'Se envía al informante y a su jefatura cuando el revisor concluye la etapa de revisión pos observaciones con un dictamen distinto a Avance Normal.', '[Dictamen de Revisión] Reporte evaluado: {{indicator_name}} - {{decision_reporte}}', 'Estimado/a {{recipient_name}},\n\nSe ha concluido la etapa de revisión para el indicador {{indicator_name}} correspondiente al período {{period_name}}.\n\nDecisión del reporte: {{decision_reporte}}\n\nComentario / Observación del revisor {{reviewer_name}}:\n"{{comments}}"\n\nPor favor ingrese al portal para consultar los detalles.', ARRAY['informant', 'jefatura'])
 ON CONFLICT (event_type) DO NOTHING;
 
 -- 3. Trigger para notificaciones al cambiar el estado del reporte
@@ -40,11 +42,23 @@ CREATE OR REPLACE FUNCTION public.handle_indicator_report_notification()
 RETURNS TRIGGER AS $$
 DECLARE
   payload jsonb;
+  calc_event_type text;
 BEGIN
+  IF NEW.status = 'responded' THEN
+    calc_event_type := 'report_responded';
+  ELSIF (NEW.status = 'approved' OR NEW.status = 'rejected') AND NEW.evaluation_status IS NOT NULL AND NEW.evaluation_status != 'avance_normal' THEN
+    calc_event_type := 'report_reviewed_with_obs';
+  ELSIF NEW.status = 'observed' THEN
+    calc_event_type := 'report_returned';
+  ELSE
+    calc_event_type := 'report_' || NEW.status;
+  END IF;
+
   payload := jsonb_build_object(
-    'event_type', 'report_' || NEW.status, -- 'report_submitted', 'report_returned', 'report_approved'
+    'event_type', calc_event_type,
     'report_id', NEW.id,
     'status', NEW.status,
+    'evaluation_status', NEW.evaluation_status,
     'old_status', CASE WHEN TG_OP = 'UPDATE' THEN OLD.status ELSE NULL END
   );
 

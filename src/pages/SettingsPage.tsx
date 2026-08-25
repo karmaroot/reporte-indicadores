@@ -38,7 +38,8 @@ const PLACEHOLDERS = [
   { key: '{{reported_value}}', label: 'Valor Reportado' },
   { key: '{{comments}}', label: 'Comentarios / Observación' },
   { key: '{{reviewer_name}}', label: 'Nombre del Revisor' },
-  { key: '{{informant_name}}', label: 'Nombre del Informante' }
+  { key: '{{informant_name}}', label: 'Nombre del Informante' },
+  { key: '{{decision_reporte}}', label: 'Decisión reporte' }
 ];
 
 export default function SettingsPage() {
@@ -1027,7 +1028,9 @@ export default function SettingsPage() {
                   <SelectItem value="period_started">Inicio Periodo de Reportabilidad Indicadores</SelectItem>
                   <SelectItem value="report_submitted">Reporte Enviado para Revisión</SelectItem>
                   <SelectItem value="report_returned">Reporte Devuelto con Observaciones</SelectItem>
-                  <SelectItem value="report_approved">Reporte Aprobado / Cumplido</SelectItem>
+                  <SelectItem value="report_approved">Reporte Revisado Sin Observaciones</SelectItem>
+                  <SelectItem value="report_responded">Informante responde observaciones</SelectItem>
+                  <SelectItem value="report_reviewed_with_obs">Reporte revisado con observaciones</SelectItem>
                 </SelectContent>
               </Select>
             </div>

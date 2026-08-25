@@ -545,6 +545,45 @@ export type Database = {
         }
         Relationships: []
       }
+      email_queue: {
+        Row: {
+          attempts: number
+          body_html: string
+          created_at: string
+          error_message: string | null
+          event_type: string
+          id: string
+          recipient_email: string
+          sent_at: string | null
+          status: string
+          subject: string
+        }
+        Insert: {
+          attempts?: number
+          body_html: string
+          created_at?: string
+          error_message?: string | null
+          event_type: string
+          id?: string
+          recipient_email: string
+          sent_at?: string | null
+          status?: string
+          subject: string
+        }
+        Update: {
+          attempts?: number
+          body_html?: string
+          created_at?: string
+          error_message?: string | null
+          event_type?: string
+          id?: string
+          recipient_email?: string
+          sent_at?: string | null
+          status?: string
+          subject?: string
+        }
+        Relationships: []
+      }
       email_smtp_settings: {
         Row: {
           created_at?: string

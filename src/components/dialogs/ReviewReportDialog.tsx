@@ -13,6 +13,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { EVALUATION_OPTIONS } from '@/lib/constants';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { calculateIndicatorProgress, isTimeReductionUnit, isIndicatorTargetFulfilled } from '@/lib/utils';
 
 interface ReviewReportDialogProps {
   open: boolean;
@@ -70,7 +71,7 @@ export function ReviewReportDialog({ open, onOpenChange, report }: ReviewReportD
   const quarterTarget = Number(ind?.[quarterInfo.key] ?? ind?.target_value ?? 0);
   const reportedVal = Number(report.reported_value ?? 0);
   
-  const progressPct = quarterTarget > 0 ? Math.min((reportedVal / quarterTarget) * 100, 100) : 0;
+  const progressPct = calculateIndicatorProgress(reportedVal, quarterTarget, ind?.unit);
 
   const unitLower = ind?.unit?.toLowerCase().trim() ?? '';
   const isQuantity = ind?.indicator_type === 'quantity' || unitLower === 'cantidad';
@@ -85,6 +86,10 @@ export function ReviewReportDialog({ open, onOpenChange, report }: ReviewReportD
 
   function getProgressColor() {
     if (reportedVal === 0) return 'bg-rose-500';
+    if (isTimeReductionUnit(ind?.unit)) {
+      if (reportedVal <= quarterTarget) return 'bg-emerald-500';
+      return reportedVal > quarterTarget * 1.25 ? 'bg-rose-500' : 'bg-amber-400';
+    }
     if (reportedVal < quarterTarget) return 'bg-amber-400';
     return 'bg-emerald-500';
   }

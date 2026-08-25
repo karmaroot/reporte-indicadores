@@ -4,3 +4,71 @@ import { twMerge } from "tailwind-merge";
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+/**
+ * Determines whether an indicator unit represents a time reduction goal (e.g. "días hábiles").
+ * For these indicators, taking fewer days (reported <= target) achieves target compliance.
+ */
+export function isTimeReductionUnit(unit?: string | null): boolean {
+  if (!unit) return false;
+  const u = unit.toLowerCase().trim();
+  return u.includes('días hábiles') || 
+         u.includes('dias habiles') || 
+         u.includes('día hábil') || 
+         u.includes('dia habil') ||
+         u.includes('días habiles') ||
+         u.includes('dias hábiles');
+}
+
+/**
+ * Checks if an indicator has fulfilled its target / weighting delivery.
+ * - For time reduction units ("días hábiles"): fulfilled if reportedVal > 0 and reportedVal <= targetVal.
+ * - For standard units: fulfilled if reportedVal >= targetVal.
+ */
+export function isIndicatorTargetFulfilled(
+  reportedVal: number,
+  targetVal: number,
+  unit?: string | null
+): boolean {
+  if (targetVal <= 0 || reportedVal === null || reportedVal === undefined || isNaN(reportedVal)) {
+    return false;
+  }
+  if (isTimeReductionUnit(unit)) {
+    return reportedVal > 0 && reportedVal <= targetVal;
+  }
+  return reportedVal >= targetVal;
+}
+
+/**
+ * Calculates progress percentage (0-100+) for an indicator based on reported value, target value, and unit.
+ * - For "días hábiles":
+ *   - If reportedVal <= 0: 0%
+ *   - If reportedVal <= targetVal: 100% (Cumple la entrega de ponderación)
+ *   - If reportedVal > targetVal: (targetVal / reportedVal) * 100
+ * - For standard indicators:
+ *   - (reportedVal / targetVal) * 100 (capped at 100% by default)
+ */
+export function calculateIndicatorProgress(
+  reportedVal: number,
+  targetVal: number,
+  unit?: string | null,
+  options?: { capAt100?: boolean }
+): number {
+  const capAt100 = options?.capAt100 ?? true;
+
+  if (targetVal <= 0 || reportedVal === null || reportedVal === undefined || isNaN(reportedVal)) {
+    return 0;
+  }
+
+  if (isTimeReductionUnit(unit)) {
+    if (reportedVal <= 0) return 0;
+    if (reportedVal <= targetVal) {
+      return 100;
+    }
+    const pct = Math.round((targetVal / reportedVal) * 100);
+    return capAt100 ? Math.min(pct, 100) : pct;
+  }
+
+  const pct = Math.round((reportedVal / targetVal) * 100);
+  return capAt100 ? Math.min(pct, 100) : pct;
+}
