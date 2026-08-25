@@ -808,6 +808,7 @@ export default function ManagementReportsPage() {
                 )}
               </div>
             )}
+          </div>
         </div>
       </div>
 
