@@ -453,7 +453,7 @@ export function ReviewReportDialog({ open, onOpenChange, report }: ReviewReportD
                       >
                         {Object.values(EVALUATION_OPTIONS).map(opt => (
                           <option key={opt.id} value={opt.id}>
-                            {opt.label} ({opt.status === 'approved' ? 'Aprobado' : 'Rechazado'})
+                            {opt.label}
                           </option>
                         ))}
                       </select>
@@ -465,9 +465,6 @@ export function ReviewReportDialog({ open, onOpenChange, report }: ReviewReportD
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full shadow-sm" style={{ backgroundColor: EVALUATION_OPTIONS[selectedEvaluation].bgColor, color: EVALUATION_OPTIONS[selectedEvaluation].textColor }}>
                             {EVALUATION_OPTIONS[selectedEvaluation].label}
-                          </span>
-                          <span className="text-[10px] font-mono font-bold uppercase text-muted-foreground">
-                            Color: {EVALUATION_OPTIONS[selectedEvaluation].bgColor}
                           </span>
                         </div>
                         <p className="text-xs text-foreground/90 font-medium leading-relaxed italic border-t pt-2 border-muted/30">
@@ -508,17 +505,81 @@ export function ReviewReportDialog({ open, onOpenChange, report }: ReviewReportD
                             <div className="h-8 w-8 rounded-lg bg-emerald-50 flex items-center justify-center">
                               <CheckCircle2 className="h-5 w-5" />
                             </div>
-                            <p className="text-sm font-black uppercase tracking-tight">Aprobación</p>
+                            <p className="text-sm font-black uppercase tracking-tight">Revisión</p>
                           </div>
                           <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">
-                            Confirma que los datos reportados son válidos y consistentes con el respaldo técnico adjunto.
+                            Selecciona la evaluación técnica del indicador y confirma los datos reportados.
                           </p>
+
+                          <div className="space-y-2">
+                            <label htmlFor="standard-eval-select" className="text-xs font-bold text-foreground block">
+                              Evaluación del Indicador <span className="text-destructive font-black">*</span>
+                            </label>
+                            <select
+                              id="standard-eval-select"
+                              value={selectedEvaluation}
+                              onChange={e => setSelectedEvaluation(e.target.value)}
+                              className="w-full h-12 rounded-xl border border-muted-foreground/30 bg-background px-4 text-xs font-bold text-foreground focus:ring-2 focus:ring-primary/20 shadow-sm"
+                            >
+                              <option value="avance_normal">Avance Normal</option>
+                              <option value="bajo_programado">Bajo lo Programado</option>
+                              <option value="en_riesgo">En Riesgo de Cumplimiento</option>
+                            </select>
+                          </div>
+
+                          {/* Selected Evaluation Badge Details */}
+                          {EVALUATION_OPTIONS[selectedEvaluation] && (
+                            <div
+                              className="p-3.5 rounded-xl border space-y-1.5 transition-all shadow-sm"
+                              style={{
+                                backgroundColor: `${EVALUATION_OPTIONS[selectedEvaluation].bgColor}15`,
+                                borderColor: EVALUATION_OPTIONS[selectedEvaluation].bgColor,
+                              }}
+                            >
+                              <span
+                                className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full inline-block shadow-sm"
+                                style={{
+                                  backgroundColor: EVALUATION_OPTIONS[selectedEvaluation].bgColor,
+                                  color: EVALUATION_OPTIONS[selectedEvaluation].textColor,
+                                }}
+                              >
+                                {EVALUATION_OPTIONS[selectedEvaluation].label}
+                              </span>
+                              <p className="text-[11px] text-foreground/90 font-medium leading-relaxed italic">
+                                "{EVALUATION_OPTIONS[selectedEvaluation].tooltip}"
+                              </p>
+                            </div>
+                          )}
+
                           <Button
-                            className="w-full h-14 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-widest transition-all shadow-xl shadow-emerald-600/20 active:scale-95 rounded-2xl"
-                            onClick={handleApprove}
-                            disabled={approveReport.isPending}
+                            className="w-full h-14 font-black text-xs uppercase tracking-widest transition-all shadow-xl rounded-2xl active:scale-95 text-white"
+                            style={{
+                              backgroundColor: EVALUATION_OPTIONS[selectedEvaluation]?.bgColor || '#93D63B',
+                              color: EVALUATION_OPTIONS[selectedEvaluation]?.textColor || '#ffffff',
+                            }}
+                            onClick={() => {
+                              const opt = EVALUATION_OPTIONS[selectedEvaluation] || EVALUATION_OPTIONS['avance_normal'];
+                              evaluateReport.mutate(
+                                {
+                                  reportId: report.id,
+                                  evaluationStatus: opt.id,
+                                  status: 'approved',
+                                },
+                                {
+                                  onSuccess: () => {
+                                    onOpenChange(false);
+                                    setMode('actions');
+                                  },
+                                }
+                              );
+                            }}
+                            disabled={evaluateReport.isPending}
                           >
-                            {approveReport.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : "APROBAR REPORTE"}
+                            {evaluateReport.isPending ? (
+                              <Loader2 className="h-5 w-5 animate-spin" />
+                            ) : (
+                              "CONFIRMAR REVISIÓN"
+                            )}
                           </Button>
                         </div>
 
@@ -561,7 +622,7 @@ export function ReviewReportDialog({ open, onOpenChange, report }: ReviewReportD
                         <div className="space-y-2">
                            <p className="text-[10px] font-bold text-muted-foreground uppercase ml-1">Detalle del Hallazgo</p>
                            <Textarea
-                            placeholder="Describe el motivo del rechazo y qué debe corregir el informante..."
+                            placeholder="Describe el motivo de la devolución y qué debe corregir el informante..."
                             value={rejectComment}
                             onChange={e => setRejectComment(e.target.value)}
                             className="min-h-[220px] text-sm font-medium resize-none border-rose-200 focus-visible:ring-rose-500/20 rounded-2xl p-4 bg-white"
@@ -598,11 +659,11 @@ export function ReviewReportDialog({ open, onOpenChange, report }: ReviewReportD
                 </div>
                 <div className="space-y-2">
                   <p className="text-lg font-black text-foreground uppercase tracking-tighter">
-                    {report.status === 'approved' ? "Reporte Aprobado" : "Fuera de revisión"}
+                    {report.status === 'approved' ? "Reporte Revisado" : "Fuera de revisión"}
                   </p>
                   <p className="text-[11px] text-muted-foreground font-medium px-4 leading-relaxed italic border-t pt-4">
                     {report.status === 'approved' 
-                      ? "Esta resolución ya ha sido procesada por AGE y el dato se considera oficial." 
+                      ? "Esta revisión ya ha sido procesada por AGE y el dato se considera oficial." 
                       : "Este reporte ya tiene una resolución emitida o el ciclo de reporte ha finalizado."}
                   </p>
                 </div>
