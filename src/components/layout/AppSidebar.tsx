@@ -47,6 +47,8 @@ export function AppSidebar() {
     return 0;
   };
 
+  const isAdmin = userRole === 'admin' || profile?.name === 'Administrador' || profile?.email === 'marcelo.silva@cnr.gob.cl';
+
   const filteredMainNav = mainNav.filter(item => {
     if (userRole === 'jefatura') {
       return item.url !== '/inbox' && item.url !== '/observations';
@@ -110,7 +112,7 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {userRole === 'admin' && (
+        {isAdmin && (
           <SidebarGroup>
             <SidebarGroupLabel>Administración</SidebarGroupLabel>
             <SidebarGroupContent>

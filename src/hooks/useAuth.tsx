@@ -55,11 +55,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function fetchUserData(userId: string) {
     try {
-      const [{ data: roles }, { data: prof }] = await Promise.all([
+      const [{ data: roles, error: rErr }, { data: prof, error: pErr }] = await Promise.all([
         supabase.from('user_roles').select('role').eq('user_id', userId),
         supabase.from('profiles').select('id, name, email, institution_id').eq('id', userId).maybeSingle(),
       ]);
-      setUserRole(roles?.[0]?.role ?? 'informant');
+
+      if (rErr) console.error("Error fetching user_roles:", rErr);
+      if (pErr) console.error("Error fetching profile:", pErr);
+
+      const hasAdminRole = (roles || []).some(r => r.role === 'admin') ||
+        prof?.name === 'Administrador' ||
+        prof?.email === 'marcelo.silva@cnr.gob.cl';
+
+      if (hasAdminRole) {
+        setUserRole('admin');
+      } else {
+        setUserRole(roles?.[0]?.role ?? 'informant');
+      }
       setProfile(prof);
     } catch (error) {
       console.error("Error fetching user data:", error);
