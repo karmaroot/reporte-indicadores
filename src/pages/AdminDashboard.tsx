@@ -312,7 +312,10 @@ export default function AdminDashboard() {
                         const capacity = weight * quarterTarget;
                         totalTargetCapacity += capacity;
 
-                        if (realTimeProgress >= quarterTarget && quarterTarget > 0) {
+                        const isFulfilled = isIndicatorTargetFulfilled(realTimeProgress, quarterTarget, ind.unit) ||
+                                            (quarterTarget > 0 && isIndicatorTargetFulfilled(realTimeProgress, Number(ind.target_value) || 0, ind.unit));
+
+                        if (isFulfilled && quarterTarget > 0) {
                           achievedCapacity += capacity;
                           achievedWeight += weight;
                         }

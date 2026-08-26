@@ -6,18 +6,19 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
- * Determines whether an indicator unit represents a time reduction goal (e.g. "días hábiles").
- * For these indicators, taking fewer days (reported <= target) achieves target compliance.
+ * Determines whether an indicator unit represents a time reduction goal (e.g. "Tiempo Promedio", "días hábiles").
+ * For these indicators, taking fewer days/time (reported <= target) achieves target compliance and weighting contribution.
  */
 export function isTimeReductionUnit(unit?: string | null): boolean {
   if (!unit) return false;
   const u = unit.toLowerCase().trim();
-  return u.includes('días hábiles') || 
-         u.includes('dias habiles') || 
-         u.includes('día hábil') || 
-         u.includes('dia habil') ||
-         u.includes('días habiles') ||
-         u.includes('dias hábiles');
+  return u.includes('tiempo') ||
+         u.includes('días') || 
+         u.includes('dias') || 
+         u.includes('día') || 
+         u.includes('dia') ||
+         u.includes('horas') ||
+         u.includes('hora');
 }
 
 /**
