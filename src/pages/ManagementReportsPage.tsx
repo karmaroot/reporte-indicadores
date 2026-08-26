@@ -54,6 +54,7 @@ function useManagementReportData(institutionIdFilter?: string) {
             status,
             evaluation_status,
             period_id,
+            institution_id,
             numerator,
             denominator,
             comment,
@@ -93,7 +94,11 @@ function useManagementReportData(institutionIdFilter?: string) {
 
           const validReports = (ind.indicator_reports || []).filter((r: any) => {
             const matchesStatus = ['submitted', 'under_review', 'responded', 'approved'].includes(r.status);
-            const matchesInst = !institutionIdFilter || institutionIdFilter === 'all' || r.institution_id === institutionIdFilter || inst.institution_id === r.institution_id;
+            const matchesInst = !institutionIdFilter || 
+                                institutionIdFilter === 'all' || 
+                                r.institution_id === institutionIdFilter || 
+                                inst.institution_id === institutionIdFilter || 
+                                !r.institution_id;
             return matchesStatus && matchesInst;
           });
 
