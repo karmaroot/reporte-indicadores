@@ -112,6 +112,7 @@ function useManagementReportData(institutionIdFilter?: string) {
 
           return {
             ...ind,
+            instrumentName: inst.name,
             informant: ass?.informant?.name || 'No asignado',
             reviewer: ass?.reviewer?.name || 'No asignado',
             latestReport,
@@ -567,11 +568,12 @@ export default function ManagementReportsPage() {
                         <table className="w-full text-xs text-left table-fixed border-collapse">
                           <thead>
                             <tr className="bg-muted/60 text-muted-foreground uppercase text-[9px] font-extrabold tracking-wider border-b">
-                              <th className="p-2 w-[36%] border-r">Indicador</th>
-                              <th className="p-2 w-[22%] border-r">Informante</th>
-                              <th className="p-2 w-[14%] text-center border-r">Avance / Meta</th>
-                              <th className="p-2 w-[12%] text-center border-r">% Cumpl.</th>
-                              <th className="p-2 w-[16%] text-center">Estado Alerta</th>
+                              <th className="p-2 w-[30%] border-r">Indicador</th>
+                              <th className="p-2 w-[12%] text-center border-r">Inst.</th>
+                              <th className="p-2 w-[20%] border-r">Informante</th>
+                              <th className="p-2 w-[13%] text-center border-r">Avance / Meta</th>
+                              <th className="p-2 w-[11%] text-center border-r">% Cumpl.</th>
+                              <th className="p-2 w-[14%] text-center">Estado Alerta</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y">
@@ -586,6 +588,9 @@ export default function ManagementReportsPage() {
                                       Unidad: {ind.unit}
                                     </div>
                                   )}
+                                </td>
+                                <td className="p-2 text-center font-bold text-primary border-r text-[10px] whitespace-nowrap">
+                                  {ind.instrumentName}
                                 </td>
                                 <td className="p-2 text-muted-foreground border-r text-[10px] break-words">
                                   {ind.informant}
