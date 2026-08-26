@@ -156,7 +156,7 @@ export default function Reports() {
                             {formatReportedValue((r.indicators as any)?.target_value, r.indicators)}
                           </td>
                           <td className="px-6 py-4 text-center">
-                            <StatusBadge status={r.status as any} />
+                            <StatusBadge status={r.status as any} evaluationStatus={r.evaluation_status} />
                           </td>
                           <td className="px-6 py-4 text-right">
                             <Link to={`/reports/${r.id}`}>

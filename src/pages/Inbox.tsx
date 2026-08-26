@@ -177,7 +177,7 @@ export default function InboxPage() {
                       </span>
                       <div className="flex items-center gap-2">
                         {isInformant && activePeriod && alreadySubmitted && existingReport && (
-                          <StatusBadge status={existingReport.status as any} />
+                          <StatusBadge status={existingReport.status as any} evaluationStatus={existingReport.evaluation_status} />
                         )}
                         {canReport && (
                           <Button size="sm" onClick={(e) => { e.stopPropagation(); handleOpenReport(a); }}>
@@ -214,7 +214,7 @@ export default function InboxPage() {
                           <p className="text-[10px] text-amber-600 mt-1">Devuelto: {new Date((r as any).returned_at).toLocaleString('es')}</p>
                         )}
                       </div>
-                      <StatusBadge status={r.status as any} />
+                      <StatusBadge status={r.status as any} evaluationStatus={r.evaluation_status} />
                     </div>
                     <div className="mt-3 flex gap-2">
                       <Button asChild variant="outline" size="sm">
@@ -246,7 +246,7 @@ export default function InboxPage() {
                     <p className="text-xs text-muted-foreground">{(r.institutions as any)?.name} — {(r.periods as any)?.name}</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <StatusBadge status={r.status as any} />
+                    <StatusBadge status={r.status as any} evaluationStatus={r.evaluation_status} />
                     <Button asChild variant="ghost" size="icon" className="h-7 w-7">
                       <Link to={`/reports/${r.id}`}><Eye className="h-3.5 w-3.5" /></Link>
                     </Button>
@@ -271,7 +271,7 @@ export default function InboxPage() {
                     <p className="text-[10px] text-muted-foreground font-mono">{new Date(r.created_at).toLocaleString('es')}</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <StatusBadge status={r.status as any} />
+                    <StatusBadge status={r.status as any} evaluationStatus={r.evaluation_status} />
                     <Button 
                       size="sm"
                       onClick={() => { setSelectedReport(r); setReviewDialogOpen(true); }}

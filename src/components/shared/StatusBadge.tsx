@@ -22,6 +22,20 @@ export function StatusBadge({ status, evaluationStatus, type = 'report' }: Statu
     );
   }
 
+  // If report is approved but evaluationStatus is null or empty, default to Avance Normal badge
+  if (type === 'report' && status === 'approved') {
+    const defaultEval = EVALUATION_OPTIONS['avance_normal'];
+    return (
+      <span 
+        title={defaultEval.tooltip}
+        style={{ backgroundColor: defaultEval.bgColor, color: defaultEval.textColor }}
+        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold shadow-sm cursor-help transition-transform hover:scale-105"
+      >
+        {defaultEval.label}
+      </span>
+    );
+  }
+
   const config = type === 'report'
     ? REPORT_STATUS_CONFIG[status as ReportStatus]
     : OBSERVATION_STATUS_CONFIG[status as ObservationStatus];

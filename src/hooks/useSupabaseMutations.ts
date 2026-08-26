@@ -312,7 +312,7 @@ export function useResubmitReport() {
   });
 }
 
-// --- Reviewer: Evaluate report (Post-resubmission final evaluation dropdown) ---
+// --- Reviewer: Evaluate report (Post-resubmission & First Instance evaluation dropdown) ---
 export function useEvaluateReport() {
   const qc = useQueryClient();
   return useMutation({
@@ -325,17 +325,19 @@ export function useEvaluateReport() {
       };
 
       const { error } = await supabase.from('indicator_reports').update(updatePayload).eq('id', reportId);
-      if (error) {
-        delete updatePayload.evaluation_status;
-        const { error: fallbackErr } = await supabase.from('indicator_reports').update(updatePayload).eq('id', reportId);
-        if (fallbackErr) throw fallbackErr;
-      }
+      if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['reports'] });
       qc.invalidateQueries({ queryKey: ['report'] });
       qc.invalidateQueries({ queryKey: ['report-counts'] });
-      toast.success('Dictamen final registrado exitosamente');
+      qc.invalidateQueries({ queryKey: ['dashboard-indicators'] });
+      qc.invalidateQueries({ queryKey: ['my-assignments'] });
+      qc.invalidateQueries({ queryKey: ['instruments'] });
+      qc.invalidateQueries({ queryKey: ['all-instruments'] });
+      qc.invalidateQueries({ queryKey: ['indicators'] });
+      qc.invalidateQueries({ queryKey: ['inbox-counts'] });
+      toast.success('Dictamen de revisión registrado exitosamente');
     },
     onError: (e: any) => toast.error(e.message),
   });

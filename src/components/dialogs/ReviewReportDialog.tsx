@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -33,6 +33,14 @@ export function ReviewReportDialog({ open, onOpenChange, report }: ReviewReportD
   const [rejectComment, setRejectComment] = useState('');
   const [selectedEvaluation, setSelectedEvaluation] = useState<string>('avance_normal');
   const [showNotesPanel, setShowNotesPanel] = useState(false);
+
+  useEffect(() => {
+    if (report?.evaluation_status && EVALUATION_OPTIONS[report.evaluation_status]) {
+      setSelectedEvaluation(report.evaluation_status);
+    } else {
+      setSelectedEvaluation('avance_normal');
+    }
+  }, [report, open]);
 
   if (!report) return null;
 
@@ -155,7 +163,7 @@ export function ReviewReportDialog({ open, onOpenChange, report }: ReviewReportD
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <StatusBadge status={report.status as any} />
+            <StatusBadge status={report.status as any} evaluationStatus={report.evaluation_status} />
           </div>
         </div>
 

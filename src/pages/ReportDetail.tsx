@@ -117,7 +117,7 @@ export default function ReportDetail() {
                 <h1 className="text-xl font-semibold text-foreground">{ind?.name}</h1>
                 <p className="text-sm text-muted-foreground mt-1">{ind?.description}</p>
               </div>
-              <StatusBadge status={report.status as any} />
+              <StatusBadge status={report.status as any} evaluationStatus={report.evaluation_status} />
             </div>
 
             {/* Zero Report Alert Indicator */}
