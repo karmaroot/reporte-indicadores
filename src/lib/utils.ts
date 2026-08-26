@@ -44,8 +44,8 @@ export function isIndicatorTargetFulfilled(
  * Calculates progress percentage (0-100+) for an indicator based on reported value, target value, and unit.
  * - For time reduction units ("Tiempo Promedio", "días hábiles", etc.):
  *   - If reportedVal <= 0: 0%
- *   - If reportedVal <= targetVal: 100% (Cumple la entrega de ponderación)
- *   - If reportedVal > targetVal: 0% (Se excedió el tiempo límite; la ponderación no aporta al cálculo de porcentaje de avance)
+ *   - If reportedVal <= targetVal: 100% (Cumple la meta de tiempo)
+ *   - If reportedVal > targetVal: (targetVal / reportedVal) * 100 (Porcentaje efectivo de avance)
  * - For standard indicators:
  *   - (reportedVal / targetVal) * 100 (capped at 100% by default)
  */
@@ -66,8 +66,9 @@ export function calculateIndicatorProgress(
     if (reportedVal <= targetVal) {
       return 100;
     }
-    // Si valor reportado > valor programado (se excedió el tiempo límite): la ponderación no aporta al avance
-    return 0;
+    // Porcentaje efectivo de avance cuando se excede el tiempo: (targetVal / reportedVal) * 100
+    const pct = Math.round((targetVal / reportedVal) * 100);
+    return capAt100 ? Math.min(pct, 100) : pct;
   }
 
   const pct = Math.round((reportedVal / targetVal) * 100);

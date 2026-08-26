@@ -91,9 +91,11 @@ function useManagementReportData(institutionIdFilter?: string) {
           const weight = Number(ind.weight) || 0;
           totalWeight += weight;
 
-          const validReports = (ind.indicator_reports || []).filter((r: any) =>
-            ['submitted', 'under_review', 'responded', 'approved'].includes(r.status)
-          );
+          const validReports = (ind.indicator_reports || []).filter((r: any) => {
+            const matchesStatus = ['submitted', 'under_review', 'responded', 'approved'].includes(r.status);
+            const matchesInst = !institutionIdFilter || institutionIdFilter === 'all' || r.institution_id === institutionIdFilter || inst.institution_id === r.institution_id;
+            return matchesStatus && matchesInst;
+          });
 
           // Calculate real-time progress
           let progress = 0;
