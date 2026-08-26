@@ -298,8 +298,6 @@ export default function AdminDashboard() {
                 <CardContent className="p-8">
                   <div className="flex gap-8 overflow-x-auto pb-4 custom-scrollbar items-center">
                     {institution.instruments.map((instrument: any) => {
-                      let totalTargetCapacity = 0;
-                      let achievedCapacity = 0;
                       let totalWeight = 0;
                       let achievedWeight = 0;
 
@@ -308,22 +306,18 @@ export default function AdminDashboard() {
                         totalWeight += weight;
                         const quarterTarget = getQuarterTarget(ind);
                         const realTimeProgress = getRealTimeProgress(ind);
-                        
-                        const capacity = weight * quarterTarget;
-                        totalTargetCapacity += capacity;
 
                         const isFulfilled = isIndicatorTargetFulfilled(realTimeProgress, quarterTarget, ind.unit) ||
                                             (quarterTarget > 0 && isIndicatorTargetFulfilled(realTimeProgress, Number(ind.target_value) || 0, ind.unit));
 
-                        if (isFulfilled && quarterTarget > 0) {
-                          achievedCapacity += capacity;
+                        if (isFulfilled) {
                           achievedWeight += weight;
                         }
                       });
 
-                      const drumPercentage = totalTargetCapacity > 0
-                        ? Math.min(100, Math.max(0, (achievedCapacity / totalTargetCapacity) * 100))
-                        : (totalWeight > 0 ? (achievedWeight / totalWeight) * 100 : 0);
+                      const drumPercentage = totalWeight > 0
+                        ? Math.min(100, Math.max(0, Math.round((achievedWeight / totalWeight) * 100)))
+                        : 0;
 
                       return (
                         <div key={instrument.id} className="flex flex-col items-center gap-4">
