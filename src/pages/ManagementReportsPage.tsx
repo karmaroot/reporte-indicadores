@@ -17,7 +17,7 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { CNR_OFFICIAL_LOGO_BASE64 } from '@/assets/cnr-official-logo-base64';
-import { calculateIndicatorProgress } from '@/lib/utils';
+import { calculateIndicatorProgress, isIndicatorTargetFulfilled } from '@/lib/utils';
 import { ReportPresentationModal } from '@/components/reports/ReportPresentationModal';
 
 // Custom hook to fetch report data
@@ -81,9 +81,15 @@ function useManagementReportData(institutionIdFilter?: string) {
       const formattedInstruments = (instruments || []).map(inst => {
         const instAssignments = (assignments || []).filter((a: any) => a.instrument_id === inst.id);
 
+        let totalWeight = 0;
+        let achievedWeight = 0;
+
         const indDetails = instAssignments.map((ass: any) => {
           const ind = (indicators || []).find((i: any) => i.id === ass.indicator_id);
           if (!ind) return null;
+
+          const weight = Number(ind.weight) || 0;
+          totalWeight += weight;
 
           const validReports = (ind.indicator_reports || []).filter((r: any) =>
             ['submitted', 'under_review', 'responded', 'approved'].includes(r.status)
@@ -98,6 +104,10 @@ function useManagementReportData(institutionIdFilter?: string) {
             const target = Number(ind.target_value) || 100;
             const repVal = Number(latestReport.reported_value) || 0;
             progress = calculateIndicatorProgress(repVal, target, ind.unit);
+
+            if (isIndicatorTargetFulfilled(repVal, target, ind.unit)) {
+              achievedWeight += weight;
+            }
           }
 
           // Evaluate risk status
@@ -121,14 +131,20 @@ function useManagementReportData(institutionIdFilter?: string) {
           };
         }).filter(Boolean);
 
-        const totalProgress = indDetails.length > 0
-          ? Math.round(indDetails.reduce((acc: number, item: any) => acc + item.progress, 0) / indDetails.length)
-          : 0;
+        const reportedDetails = indDetails.filter((item: any) => item.latestReport !== null);
+
+        const totalProgress = totalWeight > 0
+          ? Math.min(100, Math.max(0, Math.round((achievedWeight / totalWeight) * 100)))
+          : (reportedDetails.length > 0
+              ? Math.round(reportedDetails.reduce((acc: number, item: any) => acc + item.progress, 0) / reportedDetails.length)
+              : 0);
 
         return {
           ...inst,
           institution_name: (institutions || []).find(i => i.id === inst.institution_id)?.name || 'Institución',
           indicators: indDetails,
+          totalWeight,
+          achievedWeight,
           totalProgress
         };
       }).filter(inst => inst.indicators.length > 0);
