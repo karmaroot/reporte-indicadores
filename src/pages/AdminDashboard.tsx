@@ -44,6 +44,7 @@ function useDashboardData(userId?: string, userRole?: string | null) {
             id,
             reported_value,
             status,
+            evaluation_status,
             period_id,
             numerator,
             denominator,

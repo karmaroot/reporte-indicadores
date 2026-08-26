@@ -52,6 +52,7 @@ function useManagementReportData(institutionIdFilter?: string) {
             id,
             reported_value,
             status,
+            evaluation_status,
             period_id,
             numerator,
             denominator,
