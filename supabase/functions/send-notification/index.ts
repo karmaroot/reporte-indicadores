@@ -100,7 +100,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const bodyJson = await req.json();
-    const { report_id, period_id, status, event_type, old_status, is_test, action, target_email } = bodyJson;
+    const { report_id, period_id, status, event_type, old_status, is_test, action, target_email, institution_id, institution_name, indicator_ids } = bodyJson;
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -260,7 +260,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 4. Handle Period Started Event
+    // 4. Handle Period Started Event / Indicator Activation Event
     if (event_type === "period_started") {
       let periodName = "Período Asignado";
       if (period_id && period_id !== "00000000-0000-0000-0000-000000000000") {
@@ -272,22 +272,43 @@ Deno.serve(async (req: Request) => {
         if (period?.name) periodName = period.name;
       }
 
-      const { data: assignments, error: assignError } = await adminClient
+      let assignQuery = adminClient
         .from("instrument_indicators")
         .select(`
+          indicator_id,
           informant:profiles!instrument_indicators_informant_id_fkey (name, email, institution_id),
-          reviewer:profiles!instrument_indicators_reviewer_id_fkey (name, email, institution_id)
+          reviewer:profiles!instrument_indicators_reviewer_id_fkey (name, email, institution_id),
+          instrument:instruments (id, name, institution_id, institutions (id, name))
         `)
         .eq("is_active", true);
+
+      if (indicator_ids && Array.isArray(indicator_ids) && indicator_ids.length > 0) {
+        assignQuery = assignQuery.in("indicator_id", indicator_ids);
+      }
+
+      const { data: assignments, error: assignError } = await assignQuery;
 
       if (assignError) {
         throw new Error(`Failed to fetch active assignments: ${assignError.message}`);
       }
 
-      const uniqueRecipients = new Map<string, { name: string; role: string }>();
-      const activeInformantInstIds = new Set<string>();
+      let filteredAssignments = assignments || [];
+      if (institution_id && institution_id !== 'all') {
+        filteredAssignments = filteredAssignments.filter((a: any) =>
+          a.instrument?.institution_id === institution_id ||
+          a.informant?.institution_id === institution_id ||
+          a.reviewer?.institution_id === institution_id
+        );
+      } else if (institution_name && institution_name !== 'all') {
+        filteredAssignments = filteredAssignments.filter((a: any) =>
+          a.instrument?.institutions?.name?.toLowerCase().includes(institution_name.toLowerCase())
+        );
+      }
 
-      for (const row of assignments || []) {
+      const uniqueRecipients = new Map<string, { name: string; role: string }>();
+      const activeInstIds = new Set<string>();
+
+      for (const row of filteredAssignments) {
         const rowTyped = row as any;
         if (config.notify_roles.includes("informant") && rowTyped.informant?.email) {
           uniqueRecipients.set(rowTyped.informant.email, {
@@ -301,33 +322,42 @@ Deno.serve(async (req: Request) => {
             role: "reviewer"
           });
         }
-        if (config.notify_roles.includes("jefatura") && rowTyped.informant?.institution_id) {
-          activeInformantInstIds.add(rowTyped.informant.institution_id);
+        const instId = rowTyped.instrument?.institution_id || rowTyped.informant?.institution_id;
+        if (instId) {
+          activeInstIds.add(instId);
         }
       }
 
-      if (config.notify_roles.includes("jefatura") && activeInformantInstIds.size > 0) {
-        const { data: userInsts, error: jefError } = await adminClient
+      if (config.notify_roles.includes("jefatura") && activeInstIds.size > 0) {
+        const targetInstArr = Array.from(activeInstIds);
+
+        const { data: userInsts } = await adminClient
           .from("user_institutions")
           .select("user_id")
-          .in("institution_id", Array.from(activeInformantInstIds));
+          .in("institution_id", targetInstArr);
 
-        if (!jefError && userInsts && userInsts.length > 0) {
-          const userIds = userInsts.map((ui: any) => ui.user_id);
-          const { data: jefaturas, error: profError } = await adminClient
-            .from("profiles")
-            .select("name", "email")
-            .eq("role", "jefatura")
-            .in("id", userIds);
+        const userIds = (userInsts || []).map((ui: any) => ui.user_id);
 
-          if (!profError && jefaturas) {
-            for (const jef of jefaturas) {
-              if (jef.email) {
-                uniqueRecipients.set(jef.email, {
-                  name: jef.name,
-                  role: "jefatura"
-                });
-              }
+        let jefQuery = adminClient
+          .from("profiles")
+          .select("name, email")
+          .eq("role", "jefatura");
+
+        if (userIds.length > 0) {
+          jefQuery = jefQuery.or(`id.in.(${userIds.join(",")}),institution_id.in.(${targetInstArr.join(",")})`);
+        } else {
+          jefQuery = jefQuery.in("institution_id", targetInstArr);
+        }
+
+        const { data: jefaturas, error: profError } = await jefQuery;
+
+        if (!profError && jefaturas) {
+          for (const jef of jefaturas) {
+            if (jef.email) {
+              uniqueRecipients.set(jef.email, {
+                name: jef.name,
+                role: "jefatura"
+              });
             }
           }
         }
@@ -425,7 +455,7 @@ Deno.serve(async (req: Request) => {
       .select(`
         informant:profiles!instrument_indicators_informant_id_fkey (id, name, email, institution_id),
         reviewer:profiles!instrument_indicators_reviewer_id_fkey (id, name, email, institution_id),
-        instrument:instruments (name)
+        instrument:instruments (name, institution_id)
       `)
       .eq("indicator_id", (report as any).indicator_id)
       .single();
@@ -436,26 +466,33 @@ Deno.serve(async (req: Request) => {
 
     const informant = (instInd as any).informant;
     const reviewer = (instInd as any).reviewer;
-    const instrumentName = (instInd as any).instrument.name;
+    const instrumentName = (instInd as any).instrument?.name || "Instrumento";
+    const targetInstId = (instInd as any).instrument?.institution_id || (report as any).institution_id || informant?.institution_id;
 
     let jefaturaEmails: { name: string; email: string }[] = [];
-    if (config.notify_roles.includes("jefatura") && informant?.institution_id) {
-      const { data: userInsts, error: jefError } = await adminClient
+    if (config.notify_roles.includes("jefatura") && targetInstId) {
+      const { data: userInsts } = await adminClient
         .from("user_institutions")
         .select("user_id")
-        .eq("institution_id", informant.institution_id);
+        .eq("institution_id", targetInstId);
 
-      if (!jefError && userInsts && userInsts.length > 0) {
-        const userIds = userInsts.map((ui: any) => ui.user_id);
-        const { data: jefaturas, error: profError } = await adminClient
-          .from("profiles")
-          .select("name", "email")
-          .eq("role", "jefatura")
-          .in("id", userIds);
+      const userIds = (userInsts || []).map((ui: any) => ui.user_id);
 
-        if (!profError && jefaturas) {
-          jefaturaEmails = jefaturas.filter((j: any) => j.email) as { name: string; email: string }[];
-        }
+      let jefQuery = adminClient
+        .from("profiles")
+        .select("name, email")
+        .eq("role", "jefatura");
+
+      if (userIds.length > 0) {
+        jefQuery = jefQuery.or(`id.in.(${userIds.join(",")}),institution_id.eq.${targetInstId}`);
+      } else {
+        jefQuery = jefQuery.eq("institution_id", targetInstId);
+      }
+
+      const { data: jefaturas, error: profError } = await jefQuery;
+
+      if (!profError && jefaturas) {
+        jefaturaEmails = jefaturas.filter((j: any) => j.email) as { name: string; email: string }[];
       }
     }
 

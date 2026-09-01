@@ -232,6 +232,25 @@ export function useAutoStartReports() {
       for (const a of assignments) {
         await supabase.from('instrument_indicators').update({ last_started_at: now.toISOString() }).eq('id', a.id);
       }
+
+      // Invoke email alert notification targeted specifically to the started indicators/institution
+      try {
+        const indicatorIds = assignments.map(a => a.indicator_id);
+        const instIds = Array.from(new Set(assignments.map(a => (a.instruments as any)?.institution_id).filter(Boolean)));
+        await supabase.functions.invoke('send-notification', {
+          headers: {
+            Authorization: 'Bearer secret_email_alert_webhook_token_2026',
+          },
+          body: {
+            event_type: 'period_started',
+            period_id: period.id,
+            indicator_ids: indicatorIds,
+            institution_id: instIds.length === 1 ? instIds[0] : undefined,
+          },
+        });
+      } catch (e) {
+        console.warn('Notification error on auto-start:', e);
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['reports'] });
