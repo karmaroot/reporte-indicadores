@@ -1,4 +1,5 @@
 -- Trigger to automatically populate email_queue when an indicator report is initiated/created
+-- Includes deduplication by recipient to prevent email flooding during batch indicator initiation
 CREATE OR REPLACE FUNCTION public.handle_indicator_report_created_queue()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -14,6 +15,7 @@ DECLARE
   v_body TEXT;
   v_html_body TEXT;
   v_period_name TEXT;
+  v_already_exists BOOLEAN;
 BEGIN
   SELECT * INTO v_config
   FROM public.email_notification_settings
@@ -78,43 +80,52 @@ BEGIN
   END IF;
 
   FOR v_recipient IN SELECT DISTINCT ON (value->>'email') value->>'name' AS name, value->>'email' AS email FROM jsonb_array_elements(v_recipients) LOOP
-    v_subject := v_config.subject_template;
-    v_body := v_config.body_template;
+    SELECT EXISTS (
+      SELECT 1 FROM public.email_queue
+      WHERE recipient_email = v_recipient.email
+        AND event_type = 'period_started'
+        AND created_at > (NOW() - INTERVAL '5 minutes')
+    ) INTO v_already_exists;
 
-    v_subject := replace(v_subject, '{{recipient_name}}', v_recipient.name);
-    v_subject := replace(v_subject, '{{period_name}}', v_period_name);
-    v_subject := replace(v_subject, '{{indicator_name}}', v_assignment.indicator_name);
-    v_subject := replace(v_subject, '{{instrument_name}}', v_assignment.instrument_name);
+    IF NOT v_already_exists THEN
+      v_subject := v_config.subject_template;
+      v_body := v_config.body_template;
 
-    v_body := replace(v_body, '{{recipient_name}}', v_recipient.name);
-    v_body := replace(v_body, '{{period_name}}', v_period_name);
-    v_body := replace(v_body, '{{indicator_name}}', v_assignment.indicator_name);
-    v_body := replace(v_body, '{{instrument_name}}', v_assignment.instrument_name);
+      v_subject := replace(v_subject, '{{recipient_name}}', v_recipient.name);
+      v_subject := replace(v_subject, '{{period_name}}', v_period_name);
+      v_subject := replace(v_subject, '{{indicator_name}}', v_assignment.indicator_name);
+      v_subject := replace(v_subject, '{{instrument_name}}', v_assignment.instrument_name);
 
-    v_html_body := '
-      <!DOCTYPE html>
-      <html>
-      <head><meta charset="utf-8">
-      <style>
-        body { font-family: Segoe UI, sans-serif; background-color: #f8fafc; color: #1e293b; padding: 20px; }
-        .card { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        .header { background: #0f172a; padding: 24px; text-align: center; color: #ffffff; }
-        .content { padding: 24px; }
-        .text-content { line-height: 1.6; margin-bottom: 24px; white-space: pre-line; }
-        .footer { background: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; }
-      </style>
-      </head>
-      <body>
-        <div class="card">
-          <div class="header"><h2 style="margin:0;">Comisión Nacional de Riego</h2></div>
-          <div class="content"><div class="text-content">' || v_body || '</div></div>
-          <div class="footer">Sistema de Monitoreo de Indicadores AGE - CNR</div>
-        </div>
-      </body>
-      </html>';
+      v_body := replace(v_body, '{{recipient_name}}', v_recipient.name);
+      v_body := replace(v_body, '{{period_name}}', v_period_name);
+      v_body := replace(v_body, '{{indicator_name}}', v_assignment.indicator_name);
+      v_body := replace(v_body, '{{instrument_name}}', v_assignment.instrument_name);
 
-    INSERT INTO public.email_queue (event_type, recipient_email, subject, body_html, status)
-    VALUES ('period_started', v_recipient.email, v_subject, v_html_body, 'pending');
+      v_html_body := '
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8">
+        <style>
+          body { font-family: Segoe UI, sans-serif; background-color: #f8fafc; color: #1e293b; padding: 20px; }
+          .card { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+          .header { background: #0f172a; padding: 24px; text-align: center; color: #ffffff; }
+          .content { padding: 24px; }
+          .text-content { line-height: 1.6; margin-bottom: 24px; white-space: pre-line; }
+          .footer { background: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; }
+        </style>
+        </head>
+        <body>
+          <div class="card">
+            <div class="header"><h2 style="margin:0;">Comisión Nacional de Riego</h2></div>
+            <div class="content"><div class="text-content">' || v_body || '</div></div>
+            <div class="footer">Sistema de Monitoreo de Indicadores AGE - CNR</div>
+          </div>
+        </body>
+        </html>';
+
+      INSERT INTO public.email_queue (event_type, recipient_email, subject, body_html, status)
+      VALUES ('period_started', v_recipient.email, v_subject, v_html_body, 'pending');
+    END IF;
   END LOOP;
 
   RETURN NEW;
