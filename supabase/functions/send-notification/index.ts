@@ -397,11 +397,22 @@ Deno.serve(async (req: Request) => {
           body = body.replaceAll(key, value);
         }
 
+        const htmlBody = wrapEmailHtml(body);
+
+        // Enqueue to email_queue for institutional Bridge Worker (NTBK-Msilva)
+        await adminClient.from("email_queue").insert({
+          event_type: event_type,
+          recipient_email: email,
+          subject: subject,
+          body_html: htmlBody,
+          status: "pending"
+        });
+
         emailPromises.push(
           dispatchEmail(
             email,
             subject,
-            wrapEmailHtml(body),
+            htmlBody,
             smtpSettings,
             resendApiKey,
             config.custom_cc
@@ -410,7 +421,7 @@ Deno.serve(async (req: Request) => {
       }
 
       const results = await Promise.all(emailPromises);
-      return new Response(JSON.stringify({ message: `Emails sent to ${results.length} recipients`, details: results }), {
+      return new Response(JSON.stringify({ message: `Emails queued and sent to ${results.length} recipients`, details: results }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });

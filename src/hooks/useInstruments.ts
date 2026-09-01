@@ -233,23 +233,120 @@ export function useAutoStartReports() {
         await supabase.from('instrument_indicators').update({ last_started_at: now.toISOString() }).eq('id', a.id);
       }
 
-      // Invoke email alert notification targeted specifically to the started indicators/institution
+      // Inserción directa en email_queue para el Servicio Puente (NTBK-Msilva) acotada a las asignaciones e institución iniciadas
       try {
-        const indicatorIds = assignments.map(a => a.indicator_id);
-        const instIds = Array.from(new Set(assignments.map(a => (a.instruments as any)?.institution_id).filter(Boolean)));
-        await supabase.functions.invoke('send-notification', {
-          headers: {
-            Authorization: 'Bearer secret_email_alert_webhook_token_2026',
-          },
-          body: {
-            event_type: 'period_started',
-            period_id: period.id,
-            indicator_ids: indicatorIds,
-            institution_id: instIds.length === 1 ? instIds[0] : undefined,
-          },
-        });
+        const { data: config } = await supabase
+          .from('email_notification_settings')
+          .select('*')
+          .eq('event_type', 'period_started')
+          .eq('is_enabled', true)
+          .maybeSingle();
+
+        if (config) {
+          const queueInserts: any[] = [];
+          const processedEmails = new Set<string>();
+
+          for (const a of assignments) {
+            const instName = (a.instruments as any)?.name || 'Instrumento';
+            const indName = (a.indicators as any)?.name || 'Indicador';
+            const targetInstId = (a.instruments as any)?.institution_id;
+
+            const { data: assignmentDetails } = await supabase
+              .from('instrument_indicators')
+              .select('informant:profiles!instrument_indicators_informant_id_fkey(name, email), reviewer:profiles!instrument_indicators_reviewer_id_fkey(name, email)')
+              .eq('id', a.id)
+              .single();
+
+            const informant = (assignmentDetails as any)?.informant;
+            const reviewer = (assignmentDetails as any)?.reviewer;
+
+            const recipients: { name: string; email: string }[] = [];
+            if (config.notify_roles.includes('informant') && informant?.email) {
+              recipients.push({ name: informant.name, email: informant.email });
+            }
+            if (config.notify_roles.includes('reviewer') && reviewer?.email) {
+              recipients.push({ name: reviewer.name, email: reviewer.email });
+            }
+
+            if (config.notify_roles.includes('jefatura') && targetInstId) {
+              const { data: userInsts } = await supabase
+                .from('user_institutions')
+                .select('user_id')
+                .eq('institution_id', targetInstId);
+
+              const uIds = (userInsts || []).map((u: any) => u.user_id);
+
+              let query = supabase.from('profiles').select('name, email').eq('role', 'jefatura');
+              if (uIds.length > 0) {
+                query = query.or(`id.in.(${uIds.join(',')}),institution_id.eq.${targetInstId}`);
+              } else {
+                query = query.eq('institution_id', targetInstId);
+              }
+
+              const { data: jefs } = await query;
+              if (jefs) {
+                for (const j of jefs) {
+                  if (j.email) recipients.push({ name: j.name, email: j.email });
+                }
+              }
+            }
+
+            for (const r of recipients) {
+              const key = `${r.email}_${a.indicator_id}`;
+              if (!processedEmails.has(key)) {
+                processedEmails.add(key);
+
+                let subj = config.subject_template
+                  .replaceAll('{{recipient_name}}', r.name)
+                  .replaceAll('{{period_name}}', period.name)
+                  .replaceAll('{{indicator_name}}', indName)
+                  .replaceAll('{{instrument_name}}', instName);
+
+                let body = config.body_template
+                  .replaceAll('{{recipient_name}}', r.name)
+                  .replaceAll('{{period_name}}', period.name)
+                  .replaceAll('{{indicator_name}}', indName)
+                  .replaceAll('{{instrument_name}}', instName);
+
+                const htmlBody = `
+                  <!DOCTYPE html>
+                  <html>
+                  <head><meta charset="utf-8">
+                  <style>
+                    body { font-family: Segoe UI, sans-serif; background-color: #f8fafc; color: #1e293b; padding: 20px; }
+                    .card { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+                    .header { background: #0f172a; padding: 24px; text-align: center; color: #ffffff; }
+                    .content { padding: 24px; }
+                    .text-content { line-height: 1.6; margin-bottom: 24px; white-space: pre-line; }
+                    .footer { background: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; }
+                  </style>
+                  </head>
+                  <body>
+                    <div class="card">
+                      <div class="header"><h2 style="margin:0;">Comisión Nacional de Riego</h2></div>
+                      <div class="content"><div class="text-content">${body}</div></div>
+                      <div class="footer">Sistema de Monitoreo de Indicadores AGE - CNR</div>
+                    </div>
+                  </body>
+                  </html>`;
+
+                queueInserts.push({
+                  event_type: 'period_started',
+                  recipient_email: r.email,
+                  subject: subj,
+                  body_html: htmlBody,
+                  status: 'pending'
+                });
+              }
+            }
+          }
+
+          if (queueInserts.length > 0) {
+            await supabase.from('email_queue').insert(queueInserts);
+          }
+        }
       } catch (e) {
-        console.warn('Notification error on auto-start:', e);
+        console.warn('Queue insertion error on auto-start:', e);
       }
     },
     onSuccess: () => {
