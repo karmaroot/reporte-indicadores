@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { MultiSelectFilter } from '@/components/shared/MultiSelectFilter';
 import { Input } from '@/components/ui/input';
 import { Play, Zap, Clock, Filter, Search, X } from 'lucide-react';
 import { useAllInstrumentIndicators, useAutoStartReports } from '@/hooks/useInstruments';
@@ -29,34 +29,37 @@ export default function AutoStart() {
   const { data: assignments, isLoading } = useAllInstrumentIndicators();
   const autoStart = useAutoStartReports();
 
-  const [selectedCdR, setSelectedCdR] = useState<string>('all');
-  const [selectedInstrument, setSelectedInstrument] = useState<string>('all');
+  const [selectedCdRs, setSelectedCdRs] = useState<string[]>([]);
+  const [selectedInstruments, setSelectedInstruments] = useState<string[]>([]);
   const [searchIndicator, setSearchIndicator] = useState<string>('');
 
   // Extract unique institutions and instruments
-  const uniqueCdRs = Array.from(
+  const uniqueCdRNames = Array.from(
     new Set((assignments ?? []).map((a: any) => a.instruments?.institutions?.name).filter(Boolean))
   ) as string[];
 
-  const uniqueInstruments = Array.from(
+  const cdrOptions = uniqueCdRNames.map(name => ({ label: name, value: name }));
+
+  const activeCdRs = selectedCdRs.filter(v => v !== 'all');
+
+  const uniqueInstrumentNames = Array.from(
     new Set(
       (assignments ?? [])
-        .filter((a: any) => selectedCdR === 'all' || a.instruments?.institutions?.name === selectedCdR)
+        .filter((a: any) => activeCdRs.length === 0 || activeCdRs.includes(a.instruments?.institutions?.name))
         .map((a: any) => a.instruments?.name)
         .filter(Boolean)
     )
   ) as string[];
 
-  const handleCdRChange = (value: string) => {
-    setSelectedCdR(value);
-    setSelectedInstrument('all');
-  };
+  const instrumentOptions = uniqueInstrumentNames.map(name => ({ label: name, value: name }));
 
-  const isFiltered = selectedCdR !== 'all' || selectedInstrument !== 'all' || searchIndicator !== '';
+  const isFiltered = (selectedCdRs.length > 0 && !selectedCdRs.includes('all')) || 
+                     (selectedInstruments.length > 0 && !selectedInstruments.includes('all')) || 
+                     searchIndicator !== '';
 
   const handleClearFilters = () => {
-    setSelectedCdR('all');
-    setSelectedInstrument('all');
+    setSelectedCdRs([]);
+    setSelectedInstruments([]);
     setSearchIndicator('');
   };
 
@@ -66,8 +69,8 @@ export default function AutoStart() {
     const instName = a.instruments?.name || '';
     const indName = a.indicators?.name || '';
 
-    const matchesCdR = selectedCdR === 'all' || cdrName === selectedCdR;
-    const matchesInstrument = selectedInstrument === 'all' || instName === selectedInstrument;
+    const matchesCdR = selectedCdRs.length === 0 || selectedCdRs.includes('all') || selectedCdRs.includes(cdrName);
+    const matchesInstrument = selectedInstruments.length === 0 || selectedInstruments.includes('all') || selectedInstruments.includes(instName);
     const matchesIndicator = indName.toLowerCase().includes(searchIndicator.toLowerCase());
 
     return matchesCdR && matchesInstrument && matchesIndicator;
@@ -122,32 +125,24 @@ export default function AutoStart() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Centro de Responsabilidad</label>
-                <Select value={selectedCdR} onValueChange={handleCdRChange}>
-                  <SelectTrigger className="rounded-xl border-muted/50 bg-background/50 focus:ring-primary/20">
-                    <SelectValue placeholder="Todos los CdR" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl">
-                    <SelectItem value="all">Todos los CdR</SelectItem>
-                    {uniqueCdRs.map((name: string) => (
-                      <SelectItem key={name} value={name}>{name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <MultiSelectFilter
+                  placeholder="Todos los CdR"
+                  options={cdrOptions}
+                  selectedValues={selectedCdRs}
+                  onSelectionChange={setSelectedCdRs}
+                  allLabel="Todos los CdR"
+                />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Instrumento</label>
-                <Select value={selectedInstrument} onValueChange={setSelectedInstrument}>
-                  <SelectTrigger className="rounded-xl border-muted/50 bg-background/50 focus:ring-primary/20">
-                    <SelectValue placeholder="Todos los instrumentos" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl">
-                    <SelectItem value="all">Todos los instrumentos</SelectItem>
-                    {uniqueInstruments.map((name: string) => (
-                      <SelectItem key={name} value={name}>{name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <MultiSelectFilter
+                  placeholder="Todos los instrumentos"
+                  options={instrumentOptions}
+                  selectedValues={selectedInstruments}
+                  onSelectionChange={setSelectedInstruments}
+                  allLabel="Todos los instrumentos"
+                />
               </div>
 
               <div className="space-y-1.5">

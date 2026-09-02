@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { MultiSelectFilter } from '@/components/shared/MultiSelectFilter';
 import { useAuth } from '@/hooks/useAuth';
 
 export default function Indicators() {
@@ -32,8 +33,8 @@ export default function Indicators() {
   const deleteMut = useDeleteIndicator();
 
   const [search, setSearch] = useState('');
-  const [instrumentFilter, setInstrumentFilter] = useState<string>('all');
-  const [institutionFilter, setInstitutionFilter] = useState<string>('all');
+  const [selectedInstruments, setSelectedInstruments] = useState<string[]>([]);
+  const [selectedInstitutions, setSelectedInstitutions] = useState<string[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -44,13 +45,15 @@ export default function Indicators() {
   const filtered = (indicators ?? []).filter(ind => {
     const matchesSearch = !search || ind.name.toLowerCase().includes(search.toLowerCase());
     const instName = ind.instrument_id ? instrumentMap[ind.instrument_id] : null;
-    const matchesInstrument = instrumentFilter === 'all' || instName === instrumentFilter;
-    const matchesInstitution = institutionFilter === 'all' || ind.institution_id === institutionFilter;
+    const matchesInstrument = selectedInstruments.length === 0 || selectedInstruments.includes('all') || (instName ? selectedInstruments.includes(instName) : false);
+    const matchesInstitution = selectedInstitutions.length === 0 || selectedInstitutions.includes('all') || (ind.institution_id ? selectedInstitutions.includes(ind.institution_id) : false);
     return matchesSearch && matchesInstrument && matchesInstitution;
   });
 
   // Get unique instrument names for the filter
   const uniqueInstrumentNames = Array.from(new Set((instruments ?? []).map((i: any) => i.name))).sort();
+  const instrumentOptions = uniqueInstrumentNames.map(name => ({ label: name, value: name }));
+  const institutionOptions = (institutions ?? []).map((inst: any) => ({ label: inst.name, value: inst.id }));
 
   const { mutateAsync: createAssign } = useCreateInstrumentIndicator();
 
@@ -103,37 +106,25 @@ export default function Indicators() {
               <Input placeholder="Buscar indicadores..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             
-            <div className="w-[200px]">
-              <Select value={instrumentFilter} onValueChange={setInstrumentFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Filtrar por instrumento" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos los instrumentos</SelectItem>
-                  {uniqueInstrumentNames.map((name: string) => (
-                    <SelectItem key={name} value={name}>
-                      {name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="w-[220px]">
+              <MultiSelectFilter
+                placeholder="Filtrar por instrumento"
+                options={instrumentOptions}
+                selectedValues={selectedInstruments}
+                onSelectionChange={setSelectedInstruments}
+                allLabel="Todos los instrumentos"
+              />
             </div>
 
             {userRole !== 'informant' && (
-              <div className="w-[200px]">
-                <Select value={institutionFilter} onValueChange={setInstitutionFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Centro de Responsabilidad" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos los CdR</SelectItem>
-                    {(institutions ?? []).map((inst: any) => (
-                      <SelectItem key={inst.id} value={inst.id}>
-                        {inst.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="w-[220px]">
+                <MultiSelectFilter
+                  placeholder="Centro de Responsabilidad"
+                  options={institutionOptions}
+                  selectedValues={selectedInstitutions}
+                  onSelectionChange={setSelectedInstitutions}
+                  allLabel="Todos los CdR"
+                />
               </div>
             )}
           </div>
