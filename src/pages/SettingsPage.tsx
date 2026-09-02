@@ -39,7 +39,8 @@ const PLACEHOLDERS = [
   { key: '{{comments}}', label: 'Comentarios / Observación' },
   { key: '{{reviewer_name}}', label: 'Nombre del Revisor' },
   { key: '{{informant_name}}', label: 'Nombre del Informante' },
-  { key: '{{decision_reporte}}', label: 'Decisión reporte' }
+  { key: '{{decision_reporte}}', label: 'Decisión reporte' },
+  { key: '{{boton_acceso}}', label: 'Botón Acceso Plataforma' }
 ];
 
 export default function SettingsPage() {

@@ -547,7 +547,8 @@ Deno.serve(async (req: Request) => {
     };
 
     const evalStatus = (report as any).evaluation_status;
-    const decisionReporteLabel = evalStatus ? (EVALUATION_LABELS[evalStatus] || evalStatus) : "N/A";
+    const serverUrl = Deno.env.get("APP_URL") || Deno.env.get("PUBLIC_SITE_URL") || "http://NTBK-Msilva.cnr.gob.cl:8080";
+    const accessButtonHtml = `<div style="text-align: center; margin: 24px 0;"><a href="${serverUrl}" target="_blank" style="background-color: #0284c7; color: #ffffff; padding: 12px 28px; text-decoration: none; font-weight: bold; font-family: Segoe UI, sans-serif; border-radius: 8px; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">🚀 Acceder al Sistema de Indicadores AGE</a></div>`;
 
     const placeholders: Record<string, string> = {
       "{{recipient_name}}": "",
@@ -558,7 +559,10 @@ Deno.serve(async (req: Request) => {
       "{{comments}}": report.comment || "Sin comentarios adicionales",
       "{{reviewer_name}}": reviewer?.name || "Revisor Asignado",
       "{{informant_name}}": informant?.name || "Informante Asignado",
-      "{{decision_reporte}}": decisionReporteLabel
+      "{{decision_reporte}}": decisionReporteLabel,
+      "{{boton_acceso}}": accessButtonHtml,
+      "{{access_button}}": accessButtonHtml,
+      "{{url_plataforma}}": serverUrl
     };
 
     const emailPromises = [];
