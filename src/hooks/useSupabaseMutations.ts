@@ -145,6 +145,28 @@ export function useUpdateProfile() {
   });
 }
 
+export function useDeleteUserWithSubrogate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ targetUserId, subrogateUserId }: { targetUserId: string; subrogateUserId: string }) => {
+      const { data, error } = await supabase.rpc('delete_user_with_subrogate', {
+        p_target_user_id: targetUserId,
+        p_subrogate_user_id: subrogateUserId,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['profiles'] });
+      qc.invalidateQueries({ queryKey: ['all-instrument-indicators'] });
+      qc.invalidateQueries({ queryKey: ['indicators'] });
+      qc.invalidateQueries({ queryKey: ['reports'] });
+      toast.success('Usuario eliminado y asignaciones transferidas al subrogante');
+    },
+    onError: (e: any) => toast.error(e.message || 'Error al reasignar y eliminar usuario'),
+  });
+}
+
 // --- Submit Report (informant submits indicator report) ---
 export function useSubmitReport() {
   const qc = useQueryClient();

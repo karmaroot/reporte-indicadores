@@ -3,13 +3,14 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, Pencil, Plus } from 'lucide-react';
+import { Search, Pencil, Plus, Trash2 } from 'lucide-react';
 import { ROLE_LABELS } from '@/lib/constants';
 import { useProfiles } from '@/hooks/useSupabaseQuery';
-import { useUpdateUserRole, useUpdateProfile } from '@/hooks/useSupabaseMutations';
+import { useUpdateUserRole, useUpdateProfile, useDeleteUserWithSubrogate } from '@/hooks/useSupabaseMutations';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserEditDialog } from '@/components/dialogs/UserEditDialog';
 import { CreateUserDialog } from '@/components/dialogs/CreateUserDialog';
+import { DeleteUserDialog } from '@/components/dialogs/DeleteUserDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -18,6 +19,7 @@ export default function UsersPage() {
   const { data: users, isLoading } = useProfiles();
   const updateRole = useUpdateUserRole();
   const updateProfile = useUpdateProfile();
+  const deleteWithSubrogate = useDeleteUserWithSubrogate();
   const qc = useQueryClient();
 
   const [search, setSearch] = useState('');
@@ -25,6 +27,9 @@ export default function UsersPage() {
   const [editing, setEditing] = useState<any>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
 
   const filtered = (users ?? []).filter(u =>
     !search || u.name.toLowerCase().includes(search.toLowerCase()) || u.email?.toLowerCase().includes(search.toLowerCase())
@@ -62,7 +67,6 @@ export default function UsersPage() {
   const handleCreateUser = async (values: { email: string; password: string; name: string; role: string; institution_id: string | null; institution_ids?: string[] }) => {
     setCreating(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const res = await supabase.functions.invoke('create-user', {
         body: { 
           email: values.email, 
@@ -97,6 +101,21 @@ export default function UsersPage() {
       institution_ids: (u.user_institutions ?? []).map((ui: any) => ui.institution_id)
     });
     setDialogOpen(true);
+  };
+
+  const openDelete = (u: any) => {
+    const role = u.user_roles?.[0]?.role ?? 'informant';
+    setUserToDelete({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      role
+    });
+    setDeleteOpen(true);
+  };
+
+  const handleConfirmDelete = async (targetUserId: string, subrogateUserId: string) => {
+    await deleteWithSubrogate.mutateAsync({ targetUserId, subrogateUserId });
   };
 
   return (
@@ -144,9 +163,18 @@ export default function UsersPage() {
                           {ROLE_LABELS[role as keyof typeof ROLE_LABELS] ?? role}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-right">
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(u)}>
+                      <td className="px-6 py-4 text-right flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(u)} title="Editar usuario">
                           <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40" 
+                          onClick={() => openDelete(u)} 
+                          title="Eliminar usuario y reasignar subrogante"
+                        >
+                          <Trash2 className="h-4 w-4 text-rose-500" />
                         </Button>
                       </td>
                     </tr>
@@ -160,6 +188,14 @@ export default function UsersPage() {
 
       <UserEditDialog open={dialogOpen} onOpenChange={setDialogOpen} user={editing} onSave={handleSave} loading={updateProfile.isPending || updateRole.isPending} />
       <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} onSave={handleCreateUser} loading={creating} />
+      <DeleteUserDialog 
+        open={deleteOpen} 
+        onOpenChange={setDeleteOpen} 
+        user={userToDelete} 
+        availableUsers={users ?? []} 
+        onConfirm={handleConfirmDelete} 
+        loading={deleteWithSubrogate.isPending} 
+      />
     </AppLayout>
   );
 }
