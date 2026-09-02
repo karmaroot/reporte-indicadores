@@ -48,9 +48,13 @@ export function AppSidebar() {
   };
 
   const isAdmin = userRole === 'admin' || profile?.name === 'Administrador' || profile?.email === 'marcelo.silva@cnr.gob.cl';
+  const isJefatura = userRole === 'jefatura';
 
   const filteredMainNav = mainNav.filter(item => {
-    if (userRole === 'jefatura') {
+    if (item.url === '/management-reports') {
+      return isAdmin || isJefatura;
+    }
+    if (isJefatura) {
       return item.url !== '/inbox' && item.url !== '/observations';
     }
     return true;

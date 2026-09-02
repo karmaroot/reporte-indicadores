@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { Navigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { supabase } from '@/integrations/supabase/client';
@@ -165,7 +166,15 @@ function useManagementReportData(institutionIdFilter?: string) {
 }
 
 export default function ManagementReportsPage() {
-  const { profile } = useAuth();
+  const { profile, userRole } = useAuth();
+
+  const isAdmin = userRole === 'admin' || profile?.name === 'Administrador' || profile?.email === 'marcelo.silva@cnr.gob.cl';
+  const isJefatura = userRole === 'jefatura';
+
+  if (!isAdmin && !isJefatura) {
+    return <Navigate to="/" replace />;
+  }
+
   const [institutionFilter, setInstitutionFilter] = useState<string>('all');
   const [exportingPdf, setExportingPdf] = useState(false);
   const [isPresentationOpen, setIsPresentationOpen] = useState(false);
