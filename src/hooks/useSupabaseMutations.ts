@@ -136,12 +136,45 @@ export function useUpdateUserRole() {
 export function useUpdateProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, name, institution_id }: { id: string; name: string; institution_id: string | null }) => {
-      const { error } = await supabase.from('profiles').update({ name, institution_id }).eq('id', id);
+    mutationFn: async ({
+      id,
+      name,
+      institution_id,
+      subrogate_id,
+      is_subrogating,
+    }: {
+      id: string;
+      name: string;
+      institution_id: string | null;
+      subrogate_id?: string | null;
+      is_subrogating?: boolean;
+    }) => {
+      const updateData: any = { name, institution_id };
+      if (subrogate_id !== undefined) updateData.subrogate_id = subrogate_id;
+      if (is_subrogating !== undefined) updateData.is_subrogating = is_subrogating;
+
+      const { error } = await supabase.from('profiles').update(updateData).eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['profiles'] }); toast.success('Perfil actualizado'); },
     onError: (e: any) => toast.error(e.message),
+  });
+}
+
+export function useDeleteUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (userId: string) => {
+      await supabase.from('user_institutions').delete().eq('user_id', userId);
+      await supabase.from('user_roles').delete().eq('user_id', userId);
+      const { error } = await supabase.from('profiles').delete().eq('id', userId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['profiles'] });
+      toast.success('Usuario eliminado exitosamente');
+    },
+    onError: (e: any) => toast.error(e.message || 'Error al eliminar usuario'),
   });
 }
 

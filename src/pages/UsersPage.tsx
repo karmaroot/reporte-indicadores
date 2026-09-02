@@ -3,14 +3,15 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Search, Pencil, Plus, Trash2, UserCheck } from 'lucide-react';
 import { ROLE_LABELS } from '@/lib/constants';
 import { useProfiles } from '@/hooks/useSupabaseQuery';
-import { useUpdateUserRole, useUpdateProfile, useDeleteUserWithSubrogate } from '@/hooks/useSupabaseMutations';
+import { useUpdateUserRole, useUpdateProfile, useDeleteUser } from '@/hooks/useSupabaseMutations';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserEditDialog } from '@/components/dialogs/UserEditDialog';
 import { CreateUserDialog } from '@/components/dialogs/CreateUserDialog';
-import { DeleteUserDialog } from '@/components/dialogs/DeleteUserDialog';
+import { DeleteConfirmDialog } from '@/components/dialogs/DeleteConfirmDialog';
+import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -19,7 +20,7 @@ export default function UsersPage() {
   const { data: users, isLoading } = useProfiles();
   const updateRole = useUpdateUserRole();
   const updateProfile = useUpdateProfile();
-  const deleteWithSubrogate = useDeleteUserWithSubrogate();
+  const deleteUser = useDeleteUser();
   const qc = useQueryClient();
 
   const [search, setSearch] = useState('');
@@ -29,15 +30,32 @@ export default function UsersPage() {
   const [creating, setCreating] = useState(false);
 
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [userToDelete, setUserToDelete] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
+  const [userToDelete, setUserToDelete] = useState<any>(null);
+
+  const userMap = Object.fromEntries((users ?? []).map((u: any) => [u.id, u.name]));
 
   const filtered = (users ?? []).filter(u =>
     !search || u.name.toLowerCase().includes(search.toLowerCase()) || u.email?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleSave = async (values: { id: string; name: string; institution_id: string | null; role: string; institution_ids?: string[] }) => {
+  const handleSave = async (values: { 
+    id: string; 
+    name: string; 
+    institution_id: string | null; 
+    role: string; 
+    institution_ids?: string[];
+    subrogate_id?: string | null;
+    is_subrogating?: boolean;
+  }) => {
     const currentRole = editing?.role;
-    await updateProfile.mutateAsync({ id: values.id, name: values.name, institution_id: values.institution_id });
+    await updateProfile.mutateAsync({ 
+      id: values.id, 
+      name: values.name, 
+      institution_id: values.institution_id,
+      subrogate_id: values.subrogate_id,
+      is_subrogating: values.is_subrogating
+    });
+    
     if (values.role !== currentRole) {
       await updateRole.mutateAsync({ userId: values.id, role: values.role as any });
     }
@@ -98,29 +116,28 @@ export default function UsersPage() {
       email: u.email, 
       institution_id: u.institution_id, 
       role,
-      institution_ids: (u.user_institutions ?? []).map((ui: any) => ui.institution_id)
+      institution_ids: (u.user_institutions ?? []).map((ui: any) => ui.institution_id),
+      subrogate_id: u.subrogate_id ?? null,
+      is_subrogating: u.is_subrogating ?? false
     });
     setDialogOpen(true);
   };
 
   const openDelete = (u: any) => {
-    const role = u.user_roles?.[0]?.role ?? 'informant';
-    setUserToDelete({
-      id: u.id,
-      name: u.name,
-      email: u.email,
-      role
-    });
+    setUserToDelete(u);
     setDeleteOpen(true);
   };
 
-  const handleConfirmDelete = async (targetUserId: string, subrogateUserId: string) => {
-    await deleteWithSubrogate.mutateAsync({ targetUserId, subrogateUserId });
+  const handleConfirmDelete = async () => {
+    if (!userToDelete) return;
+    await deleteUser.mutateAsync(userToDelete.id);
+    setDeleteOpen(false);
+    setUserToDelete(null);
   };
 
   return (
     <AppLayout>
-      <PageHeader title="Usuarios" description="Gestión de usuarios del sistema">
+      <PageHeader title="Usuarios" description="Gestión de usuarios y subrogancias del sistema">
         <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />Nuevo Usuario</Button>
       </PageHeader>
 
@@ -141,12 +158,16 @@ export default function UsersPage() {
                   <th className="text-left text-xs font-medium text-muted-foreground px-6 py-3">Nombre</th>
                   <th className="text-left text-xs font-medium text-muted-foreground px-6 py-3">Email</th>
                   <th className="text-left text-xs font-medium text-muted-foreground px-6 py-3">Rol</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground px-6 py-3">Subrogancia</th>
                   <th className="text-right text-xs font-medium text-muted-foreground px-6 py-3">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {filtered.map((u) => {
                   const role = (u as any).user_roles?.[0]?.role ?? 'informant';
+                  const hasSubrogate = (u as any).is_subrogating && (u as any).subrogate_id;
+                  const subrogateName = hasSubrogate ? userMap[(u as any).subrogate_id] : null;
+
                   return (
                     <tr key={u.id} className="hover:bg-muted/30 transition-colors">
                       <td className="px-6 py-4">
@@ -163,8 +184,18 @@ export default function UsersPage() {
                           {ROLE_LABELS[role as keyof typeof ROLE_LABELS] ?? role}
                         </span>
                       </td>
+                      <td className="px-6 py-4">
+                        {hasSubrogate && subrogateName ? (
+                          <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30 text-[10px] font-semibold py-1 px-2.5 rounded-lg flex items-center gap-1.5 w-fit">
+                            <UserCheck className="h-3 w-3" />
+                            <span>Subrogante: {subrogateName}</span>
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/60">—</span>
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-right flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(u)} title="Editar usuario">
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(u)} title="Editar usuario y subrogancia">
                           <Pencil className="h-4 w-4" />
                         </Button>
                         <Button 
@@ -172,7 +203,7 @@ export default function UsersPage() {
                           size="icon" 
                           className="hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40" 
                           onClick={() => openDelete(u)} 
-                          title="Eliminar usuario y reasignar subrogante"
+                          title="Eliminar usuario"
                         >
                           <Trash2 className="h-4 w-4 text-rose-500" />
                         </Button>
@@ -188,13 +219,13 @@ export default function UsersPage() {
 
       <UserEditDialog open={dialogOpen} onOpenChange={setDialogOpen} user={editing} onSave={handleSave} loading={updateProfile.isPending || updateRole.isPending} />
       <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} onSave={handleCreateUser} loading={creating} />
-      <DeleteUserDialog 
-        open={deleteOpen} 
-        onOpenChange={setDeleteOpen} 
-        user={userToDelete} 
-        availableUsers={users ?? []} 
-        onConfirm={handleConfirmDelete} 
-        loading={deleteWithSubrogate.isPending} 
+      <DeleteConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="¿Eliminar usuario?"
+        description={`Estás seguro de que deseas eliminar al usuario ${userToDelete?.name ?? ''}? Esta acción no se puede deshacer.`}
+        onConfirm={handleConfirmDelete}
+        loading={deleteUser.isPending}
       />
     </AppLayout>
   );
