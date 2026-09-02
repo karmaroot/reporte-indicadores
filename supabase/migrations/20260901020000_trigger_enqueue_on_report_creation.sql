@@ -1,76 +1,85 @@
--- Trigger to automatically populate email_queue when an indicator report is initiated/created
--- Includes deduplication by recipient to prevent email flooding during batch indicator initiation
-CREATE OR REPLACE FUNCTION public.handle_indicator_report_created_queue()
+-- Drop old row-level trigger
+DROP TRIGGER IF EXISTS trigger_indicator_report_created_queue ON public.indicator_reports;
+
+-- Statement-level trigger for 1-email-per-profile business rule during batch indicator initiation
+CREATE OR REPLACE FUNCTION public.handle_indicator_report_batch_queue()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $function$
 DECLARE
   v_config RECORD;
-  v_assignment RECORD;
-  v_jefatura RECORD;
+  v_period_name TEXT;
   v_recipients JSONB := '[]'::jsonb;
   v_recipient RECORD;
   v_subject TEXT;
   v_body TEXT;
   v_html_body TEXT;
-  v_period_name TEXT;
   v_already_exists BOOLEAN;
+  v_sample_indicator TEXT;
+  v_sample_instrument TEXT;
 BEGIN
   SELECT * INTO v_config
   FROM public.email_notification_settings
   WHERE event_type = 'period_started' AND is_enabled = true;
 
   IF NOT FOUND THEN
-    RETURN NEW;
+    RETURN NULL;
   END IF;
 
-  SELECT name INTO v_period_name FROM public.periods WHERE id = NEW.period_id;
-  IF v_period_name IS NULL THEN
-    v_period_name := 'Periodo de Reportabilidad';
-  END IF;
-
-  SELECT 
-    ii.id,
-    inst.institution_id AS target_institution_id,
-    ind.name AS indicator_name,
-    inst.name AS instrument_name,
-    p_inf.name AS informant_name, p_inf.email AS informant_email,
-    p_rev.name AS reviewer_name, p_rev.email AS reviewer_email
-  INTO v_assignment
-  FROM public.instrument_indicators ii
-  JOIN public.indicators ind ON ind.id = ii.indicator_id
-  JOIN public.instruments inst ON inst.id = ii.instrument_id
-  LEFT JOIN public.profiles p_inf ON p_inf.id = ii.informant_id
-  LEFT JOIN public.profiles p_rev ON p_rev.id = ii.reviewer_id
-  WHERE ii.indicator_id = NEW.indicator_id AND ii.is_active = true
+  SELECT p.name INTO v_period_name
+  FROM new_reports nr
+  JOIN public.periods p ON p.id = nr.period_id
+  WHERE p.name IS NOT NULL
   LIMIT 1;
 
-  IF NOT FOUND THEN
-    RETURN NEW;
+  IF v_period_name IS NULL THEN
+    v_period_name := 'Información Histórica';
   END IF;
 
-  IF 'informant' = ANY(v_config.notify_roles) AND v_assignment.informant_email IS NOT NULL AND v_assignment.informant_email <> '' THEN
-    v_recipients := v_recipients || jsonb_build_object('name', v_assignment.informant_name, 'email', v_assignment.informant_email);
-  END IF;
-
-  IF 'reviewer' = ANY(v_config.notify_roles) AND v_assignment.reviewer_email IS NOT NULL AND v_assignment.reviewer_email <> '' THEN
-    v_recipients := v_recipients || jsonb_build_object('name', v_assignment.reviewer_name, 'email', v_assignment.reviewer_email);
-  END IF;
-
-  IF 'jefatura' = ANY(v_config.notify_roles) AND v_assignment.target_institution_id IS NOT NULL THEN
-    FOR v_jefatura IN
+  -- 1. Informants assigned to ANY of the newly initiated indicators
+  IF 'informant' = ANY(v_config.notify_roles) THEN
+    FOR v_recipient IN
       SELECT DISTINCT p.name, p.email
-      FROM public.profiles p
-      LEFT JOIN public.user_institutions ui ON ui.user_id = p.id
-      WHERE p.role = 'jefatura'
-        AND (p.institution_id = v_assignment.target_institution_id OR ui.institution_id = v_assignment.target_institution_id)
-        AND p.email IS NOT NULL AND p.email <> ''
+      FROM new_reports nr
+      JOIN public.instrument_indicators ii ON ii.indicator_id = nr.indicator_id AND ii.is_active = true
+      JOIN public.profiles p ON p.id = ii.informant_id
+      WHERE p.email IS NOT NULL AND p.email <> ''
     LOOP
-      v_recipients := v_recipients || jsonb_build_object('name', v_jefatura.name, 'email', v_jefatura.email);
+      v_recipients := v_recipients || jsonb_build_object('name', v_recipient.name, 'email', v_recipient.email);
     END LOOP;
   END IF;
 
+  -- 2. Reviewers assigned to ANY of the newly initiated indicators
+  IF 'reviewer' = ANY(v_config.notify_roles) THEN
+    FOR v_recipient IN
+      SELECT DISTINCT p.name, p.email
+      FROM new_reports nr
+      JOIN public.instrument_indicators ii ON ii.indicator_id = nr.indicator_id AND ii.is_active = true
+      JOIN public.profiles p ON p.id = ii.reviewer_id
+      WHERE p.email IS NOT NULL AND p.email <> ''
+    LOOP
+      v_recipients := v_recipients || jsonb_build_object('name', v_recipient.name, 'email', v_recipient.email);
+    END LOOP;
+  END IF;
+
+  -- 3. Jefaturas associated with the institutions of the newly initiated indicators
+  IF 'jefatura' = ANY(v_config.notify_roles) THEN
+    FOR v_recipient IN
+      SELECT DISTINCT p.name, p.email
+      FROM new_reports nr
+      JOIN public.instrument_indicators ii ON ii.indicator_id = nr.indicator_id AND ii.is_active = true
+      JOIN public.instruments inst ON inst.id = ii.instrument_id
+      JOIN public.profiles p ON p.role = 'jefatura'
+      LEFT JOIN public.user_institutions ui ON ui.user_id = p.id
+      WHERE (p.institution_id = inst.institution_id OR ui.institution_id = inst.institution_id)
+        AND p.email IS NOT NULL AND p.email <> ''
+    LOOP
+      v_recipients := v_recipients || jsonb_build_object('name', v_recipient.name, 'email', v_recipient.email);
+    END LOOP;
+  END IF;
+
+  -- 4. Custom CC
   IF v_config.custom_cc IS NOT NULL AND cardinality(v_config.custom_cc) > 0 THEN
     FOR v_recipient IN SELECT unnest(v_config.custom_cc) AS email LOOP
       IF v_recipient.email IS NOT NULL AND v_recipient.email <> '' THEN
@@ -79,6 +88,17 @@ BEGIN
     END LOOP;
   END IF;
 
+  SELECT ind.name, inst.name INTO v_sample_indicator, v_sample_instrument
+  FROM new_reports nr
+  JOIN public.indicators ind ON ind.id = nr.indicator_id
+  JOIN public.instrument_indicators ii ON ii.indicator_id = nr.indicator_id
+  JOIN public.instruments inst ON inst.id = ii.instrument_id
+  LIMIT 1;
+
+  IF v_sample_indicator IS NULL THEN v_sample_indicator := 'Indicadores del periodo'; END IF;
+  IF v_sample_instrument IS NULL THEN v_sample_instrument := 'Instrumentos asignados'; END IF;
+
+  -- Insert EXACTLY 1 email per distinct recipient
   FOR v_recipient IN SELECT DISTINCT ON (value->>'email') value->>'name' AS name, value->>'email' AS email FROM jsonb_array_elements(v_recipients) LOOP
     SELECT EXISTS (
       SELECT 1 FROM public.email_queue
@@ -93,13 +113,13 @@ BEGIN
 
       v_subject := replace(v_subject, '{{recipient_name}}', v_recipient.name);
       v_subject := replace(v_subject, '{{period_name}}', v_period_name);
-      v_subject := replace(v_subject, '{{indicator_name}}', v_assignment.indicator_name);
-      v_subject := replace(v_subject, '{{instrument_name}}', v_assignment.instrument_name);
+      v_subject := replace(v_subject, '{{indicator_name}}', v_sample_indicator);
+      v_subject := replace(v_subject, '{{instrument_name}}', v_sample_instrument);
 
       v_body := replace(v_body, '{{recipient_name}}', v_recipient.name);
       v_body := replace(v_body, '{{period_name}}', v_period_name);
-      v_body := replace(v_body, '{{indicator_name}}', v_assignment.indicator_name);
-      v_body := replace(v_body, '{{instrument_name}}', v_assignment.instrument_name);
+      v_body := replace(v_body, '{{indicator_name}}', v_sample_indicator);
+      v_body := replace(v_body, '{{instrument_name}}', v_sample_instrument);
 
       v_html_body := '
         <!DOCTYPE html>
@@ -128,12 +148,14 @@ BEGIN
     END IF;
   END LOOP;
 
-  RETURN NEW;
+  RETURN NULL;
 END;
 $function$;
 
-DROP TRIGGER IF EXISTS trigger_indicator_report_created_queue ON public.indicator_reports;
-CREATE TRIGGER trigger_indicator_report_created_queue
+-- Create statement trigger
+DROP TRIGGER IF EXISTS trigger_indicator_report_batch_queue ON public.indicator_reports;
+CREATE TRIGGER trigger_indicator_report_batch_queue
   AFTER INSERT ON public.indicator_reports
-  FOR EACH ROW
-  EXECUTE FUNCTION public.handle_indicator_report_created_queue();
+  REFERENCING NEW TABLE AS new_reports
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION public.handle_indicator_report_batch_queue();
