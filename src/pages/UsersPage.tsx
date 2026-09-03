@@ -41,6 +41,7 @@ export default function UsersPage() {
   const handleSave = async (values: { 
     id: string; 
     name: string; 
+    email: string;
     institution_id: string | null; 
     role: string; 
     institution_ids?: string[];
@@ -48,16 +49,46 @@ export default function UsersPage() {
     is_subrogating?: boolean;
   }) => {
     const currentRole = editing?.role;
-    await updateProfile.mutateAsync({ 
-      id: values.id, 
-      name: values.name, 
-      institution_id: values.institution_id,
-      subrogate_id: values.subrogate_id,
-      is_subrogating: values.is_subrogating
-    });
-    
-    if (values.role !== currentRole) {
-      await updateRole.mutateAsync({ userId: values.id, role: values.role as any });
+
+    try {
+      const res = await supabase.functions.invoke('update-user', {
+        body: {
+          userId: values.id,
+          email: values.email,
+          name: values.name,
+          role: values.role,
+          institution_id: values.institution_id,
+          subrogate_id: values.subrogate_id,
+          is_subrogating: values.is_subrogating
+        }
+      });
+      if (res.error || res.data?.error) {
+        console.warn("Edge function update-user return error, falling back to direct update:", res.error || res.data?.error);
+        await updateProfile.mutateAsync({ 
+          id: values.id, 
+          name: values.name, 
+          email: values.email,
+          institution_id: values.institution_id,
+          subrogate_id: values.subrogate_id,
+          is_subrogating: values.is_subrogating
+        });
+        if (values.role !== currentRole) {
+          await updateRole.mutateAsync({ userId: values.id, role: values.role as any });
+        }
+      }
+    } catch (err) {
+      console.warn("Error invoking update-user edge function, falling back to direct update:", err);
+      await updateProfile.mutateAsync({ 
+        id: values.id, 
+        name: values.name, 
+        email: values.email,
+        institution_id: values.institution_id,
+        subrogate_id: values.subrogate_id,
+        is_subrogating: values.is_subrogating
+      });
+      if (values.role !== currentRole) {
+        await updateRole.mutateAsync({ userId: values.id, role: values.role as any });
+      }
     }
 
     // Sync user_institutions table
@@ -79,6 +110,7 @@ export default function UsersPage() {
     }
 
     qc.invalidateQueries({ queryKey: ['profiles'] });
+    toast.success('Usuario actualizado exitosamente');
     setDialogOpen(false);
   };
 

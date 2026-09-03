@@ -703,6 +703,13 @@ export type Database = {
         }
         Returns: boolean
       }
+      delete_user_with_subrogate: {
+        Args: {
+          p_target_user_id: string
+          p_subrogate_user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role: "admin" | "reviewer" | "informant" | "jefatura"

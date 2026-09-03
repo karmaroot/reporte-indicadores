@@ -26,6 +26,7 @@ interface Props {
   onSave: (values: {
     id: string;
     name: string;
+    email: string;
     institution_id: string | null;
     role: string;
     institution_ids?: string[];
@@ -37,6 +38,7 @@ interface Props {
 
 export function UserEditDialog({ open, onOpenChange, user, onSave, loading }: Props) {
   const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [role, setRole] = useState('informant');
   const [institutionId, setInstitutionId] = useState<string | null>(null);
   const [institutionIds, setInstitutionIds] = useState<string[]>([]);
@@ -49,6 +51,7 @@ export function UserEditDialog({ open, onOpenChange, user, onSave, loading }: Pr
   useEffect(() => {
     if (user) {
       setName(user.name);
+      setEmail(user.email ?? '');
       setRole(user.role);
       setInstitutionId(user.institution_id);
       setInstitutionIds(user.institution_ids ?? []);
@@ -66,6 +69,7 @@ export function UserEditDialog({ open, onOpenChange, user, onSave, loading }: Pr
     onSave({ 
       id: user.id, 
       name, 
+      email,
       institution_id: role === 'jefatura' ? null : institutionId, 
       role,
       institution_ids: role === 'jefatura' ? institutionIds : [],
@@ -89,7 +93,7 @@ export function UserEditDialog({ open, onOpenChange, user, onSave, loading }: Pr
             </div>
             <div>
               <Label className="text-xs font-semibold">Email</Label>
-              <Input value={user?.email ?? ''} disabled className="bg-muted rounded-xl mt-1" />
+              <Input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="rounded-xl mt-1" />
             </div>
           </div>
 

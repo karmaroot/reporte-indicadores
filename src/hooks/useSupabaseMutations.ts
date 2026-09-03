@@ -139,17 +139,20 @@ export function useUpdateProfile() {
     mutationFn: async ({
       id,
       name,
+      email,
       institution_id,
       subrogate_id,
       is_subrogating,
     }: {
       id: string;
       name: string;
+      email?: string;
       institution_id: string | null;
       subrogate_id?: string | null;
       is_subrogating?: boolean;
     }) => {
       const updateData: any = { name, institution_id };
+      if (email !== undefined) updateData.email = email;
       if (subrogate_id !== undefined) updateData.subrogate_id = subrogate_id;
       if (is_subrogating !== undefined) updateData.is_subrogating = is_subrogating;
 
@@ -182,7 +185,7 @@ export function useDeleteUserWithSubrogate() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ targetUserId, subrogateUserId }: { targetUserId: string; subrogateUserId: string }) => {
-      const { data, error } = await supabase.rpc('delete_user_with_subrogate', {
+      const { data, error } = await (supabase.rpc as any)('delete_user_with_subrogate', {
         p_target_user_id: targetUserId,
         p_subrogate_user_id: subrogateUserId,
       });
